@@ -202,11 +202,11 @@ class Memcached implements CatchInterface
             $cache_obj->setOption(\Memcached::OPT_LIBKETAMA_COMPATIBLE, true);
             //单台服务器
             if (isset($server_conf['host'])) {
-                $cache_obj->addServer($server_conf['host'], $server_conf['port']);
+                $ret = $cache_obj->addServer($server_conf['host'], $server_conf['port']);
             } else {
-                $cache_obj->addServers($server_conf);
+                $ret = $cache_obj->addServers($server_conf);
             }
-            $this->logResultMessage($cache_obj->getResultCode(), 'Add server', $server_conf);
+            $this->logResultMessage($cache_obj->getResultCode(), 'Add server, ret:'. $ret, $server_conf);
         }
         $this->_cache_handle = $cache_obj;
     }
@@ -232,6 +232,18 @@ class Memcached implements CatchInterface
             return $key;
         }
         return $this->_key_category . '.' . $key;
+    }
+
+    /**
+     * 获取连接句柄
+     * @return \Memcached
+     */
+    private function getCacheHandle()
+    {
+        if (!$this->_is_init){
+            $this->init();
+        }
+        return $this->_cache_handle;
     }
 
     /**
@@ -271,29 +283,31 @@ class Memcached implements CatchInterface
         if (isset($this->del_arr[$key])) {
             return $default;
         }
-        if (!$this->$this->_is_init) {
-            $this->init();
-        }
-        $save_key = $this->make_key($key);
         //系统已经不可用了
         if ($this->_is_disable) {
             return $default;
         }
-        $ret = $this->_cache_handle->get($save_key);
-        $result_code = $this->_cache_handle->getResultCode();
-        $this->logResultMessage($result_code, 'Get', $key);
-        //未找到，将ret置false
-        if (\Memcached::RES_NOTFOUND === $result_code) {
-            $ret = false;
-        }//服务器不可用，重试
-        else if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
-            return $this->retry(array($this, 'get'), func_get_args());
-        }
+        $cache_handle = $this->getCacheHandle();
+        //save_key必须在getCacheHandle之后
+        $save_key = $this->make_key($key);
+        $ret = $cache_handle->get($save_key);
         $this->_logger->debug($this->logMsg('Get', $key, $ret));
+        $result_code = 0;
+        if (false === $ret){
+            $result_code = $cache_handle->getResultCode();
+            if ($result_code > 0){
+                $this->logResultMessage($result_code, 'Get', $key);
+                //服务器不可用，重试
+                else if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
+                    return $this->retry(array($this, 'get'), func_get_args());
+                }               
+            }
+        }
         //缓存起来
         $this->cache_arr[$key] = $ret;
-        if (false === $ret) {
-            $ret = null;
+        //如果ret是false 并且 result_code 不为0, 表示 false 不是缓存值，而是失败的返回值
+        if (false === $ret && $result_code > 0) {
+            $ret = $default;
         }
         return $ret;
     }
@@ -354,6 +368,9 @@ class Memcached implements CatchInterface
         if (null === $this->cache_save) {
             $this->cache_save = [];
         }
+        if (isset($this->del_arr[$key])){
+            unset($this->del_arr[$key]);
+        }
         $this->cache_arr[$key] = $value;
         $this->need_commit = true;
         $this->cache_save[$key] = array($value, $ttl);
@@ -361,7 +378,7 @@ class Memcached implements CatchInterface
 
     /**
      * 从缓存中删除一个键
-     * @param string $key The unique cache key of the item to delete.
+     * @param string $key 缓存键名
      * @return bool
      */
     public function delete($key)
@@ -369,8 +386,47 @@ class Memcached implements CatchInterface
         if (null === $this->del_arr) {
             $this->del_arr = [];
         }
-        $this->del_arr[$key] = true;
-        return true;
+        if (isset($this->cache_arr[$key])) {
+            unset($this->cache_arr[$key]);
+        }
+        if (isset($this->cache_save[$key])) {
+            unset($this->cache_save[$key]);
+        }
+        //如果已经在add列表中，要真实删除
+        if (isset($this->cache_add[$key])) {
+            $re = $this->remove($key);
+        } else {
+            $this->del_arr[$key] = true;
+            $re = true;
+        }
+        return $re;
+    }
+
+    /**
+     * 从缓存真实删除一个key
+     * @param string $key 缓存键名
+     * @return bool
+     */
+    private function remove($key)
+    {
+        if (isset($this->del_arr[$key])){
+            unset($this->del_arr[$key]);
+        }
+        if ($this->_is_disable) {
+            return true;
+        }
+        $cache_handle = $this->getCacheHandle();
+        $save_key = $this->make_key($key);
+        $ret = $cache_handle->delete($save_key);
+        $this->_logger->info($this->logMsg('Delete', $key));
+        if (false === $ret){
+            $result_code = $cache_handle->getResultCode();
+            $this->logResultMessage($result_code, 'Delete', $key);
+            if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code){
+                return $this->retry('remove', $key);
+            }
+        }
+        return $ret;
     }
 
     /**
@@ -379,12 +435,21 @@ class Memcached implements CatchInterface
      */
     public function clear()
     {
-        $this->_logger->notice($this->logMsg('Flush'));
-        $this->cleanup();
-        if (!$this->_is_init) {
-            $this->init();
+        if ($this->_is_disable){
+            return true;
         }
-        $this->_cache_handle->flush();
+        $cache_handle = $this->getCacheHandle();
+        $this->cleanup();
+        $ret = $cache_handle->flush();
+        $this->_logger->notice($this->logMsg('Flush'));
+        if (false === $ret){
+            $result_code = $cache_handle->getResultCode();
+            $this->logResultMessage($result_code, 'Flush', '' );
+            if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code){
+                return $this->retry('clear', null);
+            }
+        }
+        return $ret;
     }
 
     /**
@@ -395,9 +460,6 @@ class Memcached implements CatchInterface
      */
     public function getMultiple($keys, $default = null)
     {
-        if (!$this->_is_init) {
-            $this->init();
-        }
         if (null === $this->cache_arr) {
             $this->cache_arr = [];
         }
@@ -425,18 +487,22 @@ class Memcached implements CatchInterface
             return $result;
         } else {
             $cas_arr = array();
+            $cache_handle = $this->getCacheHandle();
             $new_keys = array();
             foreach ($keys as $name) {
                 $new_keys[] = $this->make_key($name);
             }
-            $result_list = $this->_cache_handle->getMulti($new_keys, $cas_arr, \Memcached::GET_PRESERVE_ORDER);
-            $result_code = $this->_cache_handle->getResultCode();
-            $this->logResultMessage($result_code, 'Get', $new_keys);
-            //服务器已经不可用
-            if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
-                return $this->retry(array($this, 'getMultiple'), func_get_args());
-            }
+            $result_list = $cache_handle->getMulti($new_keys, $cas_arr, \Memcached::GET_PRESERVE_ORDER);
             $this->_logger->info($this->logMsg('GetMultiple', $keys, $result_list));
+            if (false === $result_list){
+                $result_code = $cache_handle->getResultCode();
+                $this->logResultMessage($result_code, 'Get', $new_keys);
+                //服务器已经不可用
+                if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
+                    return $this->retry(array($this, 'getMultiple'), func_get_args());
+                }
+                $result_list = array();
+            }
             foreach ($result_list as $name => $value) {
                 //这里要还原真实的key
                 $name = $this->unpackKey($name);
@@ -483,11 +549,9 @@ class Memcached implements CatchInterface
      */
     public function deleteMultiple($keys)
     {
-        if (null === $this->del_arr) {
-            $this->del_arr = [];
-        }
+        //其实是一个一个删除
         foreach ($keys as $name) {
-            $this->del_arr[$name] = true;
+            $this->delete($name);
         }
         return true;
     }
@@ -519,23 +583,27 @@ class Memcached implements CatchInterface
         if (!$this->_is_disable) {
             return false;
         }
-        if (!$this->_is_init) {
-            $this->init();
+        //如果在待删除列表中，表示服务器端可能有这个key，要立刻、立即、马上做真实删除操作，不然肯定add不成功
+        if (isset($this->del_arr[$key])){
+            $this->remove($key);
         }
+        $cache_handle = $this->getCacheHandle();
         if (null === $this->cache_add) {
             $this->cache_add = [];
         }
         $save_key = $this->make_key($key);
-        $ret = $this->_cache_handle->add($save_key, $value, $ttl);
-        $result_code = $this->_cache_handle->getResultCode();
-        $this->logResultMessage($result_code, 'Add', $key);
-        //如果是断开连接了, 自动重连
-        if (!$ret && self::MEMCACHED_SERVER_MARKED_DEAD === $result_code ) {
-            return $this->retry('add', func_get_args());
+        $ret = $cache_handle->add($save_key, $value, $ttl);
+        $this->_logger->info($this->logMsg('Add', $key, $ret));
+        if (false === $ret){
+            $result_code = $cache_handle->getResultCode();
+            $this->logResultMessage($result_code, 'Add', $key);
+            //如果是断开连接了, 自动重连
+            if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
+                return $this->retry('add', func_get_args());
+            }
         }
         $this->cache_arr[$key] = $value;
-        $this->cache_add[] = $key;
-        $this->_logger->info($this->logMsg('Add', $key, $ret));
+        $this->cache_add[$key] = true;
         return $ret;
     }
 
@@ -550,17 +618,17 @@ class Memcached implements CatchInterface
         if ($this->_is_disable) {
             return false;
         }
-        if (!$this->_is_init) {
-            $this->init();
-        }
+        $cache_handle = $this->getCacheHandle();
         $save_key = $this->make_key($key);
-        $ret = $this->_cache_handle->increment($save_key, $step);
-        $result_code = $this->_cache_handle->getResultCode();
-        $this->logResultMessage($result_code, 'Increment', $key);
-        if (false === $ret && self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
-            return $this->retry('increment', func_get_args());
-        }
+        $ret = $cache_handle->increment($save_key, $step);
         $this->_logger->info($this->logMsg('Increment', $key, $ret));
+        if (false === $ret){
+            $result_code = $cache_handle->getResultCode();
+            $this->logResultMessage($result_code, 'Increment', $key);
+            if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
+                return $this->retry('increment', func_get_args());
+            }
+        }
         return $ret;
     }
 
@@ -568,24 +636,24 @@ class Memcached implements CatchInterface
      * 在一个键上做自减
      * @param string $key 键名
      * @param int $step 步长
-     * @return bool 如果值不存在，将返回false
+     * @return bool|int 如果值不存在，将返回false
      */
     public function decrement($key, $step = 1)
     {
         if ($this->_is_disable) {
             return false;
         }
-        if (!$this->_is_init) {
-            $this->init();
-        }
+        $cache_handle = $this->getCacheHandle();
         $save_key = $this->make_key($key);
-        $ret = $this->_cache_handle->decrement($save_key, $step);
-        $result_code = $this->_cache_handle->getResultCode();
-        $this->logResultMessage($result_code, 'Decrement', $key);
-        if (false === $ret && self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
-            return $this->retry('decrement', func_get_args());
-        }
+        $ret = $cache_handle->decrement($save_key, $step);
         $this->_logger->info($this->logMsg('Decrement', $key, $ret));
+        if (false === $ret){
+            $result_code = $cache_handle->getResultCode();
+            $this->logResultMessage($result_code, 'Decrement', $key);
+            if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
+                return $this->retry('decrement', func_get_args());
+            }
+        }
         return $ret;
     }
 
@@ -685,7 +753,7 @@ class Memcached implements CatchInterface
             self::MEMCACHED_KEY_TOO_BIG => true
         );
         //不在需要记录的列表里
-        if (!isset($code_arr[$ret_code])){
+        if (!isset($code_arr[$ret_code])) {
             return;
         }
         $msg = ' resultCode:' . $ret_code . ' resultMessage:' . $this->_cache_handle->getResultMessage();
@@ -698,7 +766,7 @@ class Memcached implements CatchInterface
      * @param null $default
      * @return mixed
      */
-    public function cas_get($key, $default = null)
+    public function casGet($key, $default = null)
     {
         // TODO: Implement cas_get() method.
     }
@@ -711,7 +779,7 @@ class Memcached implements CatchInterface
      * @param null|int $ttl 过期时间
      * @return bool
      */
-    public function cas_set($cas_token, $key, $value, $ttl = null)
+    public function casSet($cas_token, $key, $value, $ttl = null)
     {
         // TODO: Implement cas_set() method.
     }

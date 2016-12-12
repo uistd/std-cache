@@ -30,7 +30,7 @@ interface CatchInterface
      * @param null $default
      * @return mixed
      */
-    public function cas_get($key, $default = null);
+    public function casGet($key, $default = null);
     
     /**
      * 先比较cas，再做缓存更新（如果未找到cas值，将更新失败）
@@ -40,11 +40,11 @@ interface CatchInterface
      * @param null|int $ttl 过期时间
      * @return bool
      */
-    public function cas_set($cas_token, $key, $value, $ttl = null);
+    public function casSet($cas_token, $key, $value, $ttl = null);
 
     /**
      * 从缓存中删除一个键
-     * @param string $key The unique cache key of the item to delete.
+     * @param string $key 缓存名
      * @return bool
      */
     public function delete($key);
@@ -106,7 +106,7 @@ interface CatchInterface
      * 在一个键上做自减
      * @param string $key 键名
      * @param int $step 步长
-     * @return bool 如果值不存在，将返回false
+     * @return bool|int 如果值不存在，将返回false
      */
     public function decrement($key, $step = 1);
 
