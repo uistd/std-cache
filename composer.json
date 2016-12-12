@@ -1,0 +1,29 @@
+{
+  "name": "ffan/php/cache",
+  "description": "FFan cache",
+  "keywords": [
+    "ffan",
+    "php",
+    "cache"
+  ],
+  "type": "composer",
+  "authors": [
+    {
+      "name": "huangshunzhao",
+      "email": "huangshunzhao@wanda.cn",
+      "role": "Founder and project lead"
+    }
+  ],
+  "require": {
+    "php": ">=5.5.0",
+    "ffan/php/utils": "~1.0",
+    "ffan/php/logger": "~1.0"
+  },
+  "autoload": {
+  "psr-4": {"ffan\\php\\cache\\": ""}
+},
+  "minimum-stability": "dev",
+  "archive": {
+    "exclude": ["test", ".gitignore"]
+  }
+}
