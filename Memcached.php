@@ -698,7 +698,7 @@ class Memcached implements CatchInterface
             if (false === $ret) {
                 $result_code = $cache_handle->getResultCode();
                 $this->logResultMessage($result_code, 'set/setMulti', 'multipleKeys', $value_arr);
-                if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code){
+                if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
                     return $this->retry('commitSet', null);
                 }
             }
@@ -712,7 +712,7 @@ class Memcached implements CatchInterface
      */
     private function commitDelete()
     {
-        if (empty($this->del_arr) || $this->_is_disabled){
+        if (empty($this->del_arr) || $this->_is_disabled) {
             return true;
         }
         $keys = array();
@@ -722,10 +722,10 @@ class Memcached implements CatchInterface
         $cache_handle = $this->getCacheHandle();
         $ret = $cache_handle->deleteMulti($keys);
         $this->_logger->debug($this->logMsg('deleteMulti', $keys, $ret));
-        if (false === $ret){
+        if (false === $ret) {
             $result_code = $cache_handle->getResultCode();
             $this->logResultMessage($result_code, 'deleteMulti', $keys);
-            if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code){
+            if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
                 return $this->retry('commitDelete', null);
             }
         }
@@ -907,8 +907,7 @@ class Memcached implements CatchInterface
             if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
                 return $this->retry(array($this, 'casSet'), func_get_args());
             }
-        }
-        else{
+        } else {
             unset($this->_token_arr[$key], $this->cache_save[$key]);
             $this->cache_arr[$key] = $value;
         }
