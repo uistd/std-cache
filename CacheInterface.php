@@ -34,13 +34,12 @@ interface CatchInterface
     
     /**
      * 先比较cas，再做缓存更新（如果未找到cas值，将更新失败）
-     * @param float $cas_token token值
      * @param string $key 缓存键名
      * @param mixed $value 值
      * @param null|int $ttl 过期时间
      * @return bool
      */
-    public function casSet($cas_token, $key, $value, $ttl = null);
+    public function casSet($key, $value, $ttl = null);
 
     /**
      * 从缓存中删除一个键
@@ -112,17 +111,19 @@ interface CatchInterface
 
     /**
      * 设置一个缓存的过期时间（精确时间）
-     * @param int|null $expiration
+     * @param string $key 缓存
+     * @param int|null $time 时间
      * @return bool
      */
-    public function expiresAt($expiration);
+    public function expiresAt($key, $time);
 
     /**
      * 设置一个缓存有效时间
-     * @param int|null $time
+     * @param string $key 缓存
+     * @param int|null $time 时间
      * @return bool
      */
-    public function expiresAfter($time);
+    public function expiresAfter($key, $time);
 
     /**
      * 提交
