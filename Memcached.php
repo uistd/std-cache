@@ -328,12 +328,6 @@ class Memcached implements CatchInterface
     public function set($key, $value, $ttl = null)
     {
         $ttl = $this->ttl($ttl);
-        if (null === $this->cache_arr) {
-            $this->cache_arr = [];
-        }
-        if (null === $this->cache_save) {
-            $this->cache_save = [];
-        }
         if (isset($this->del_arr[$key])) {
             unset($this->del_arr[$key]);
         }
@@ -348,9 +342,6 @@ class Memcached implements CatchInterface
      */
     public function delete($key)
     {
-        if (null === $this->del_arr) {
-            $this->del_arr = [];
-        }
         if (isset($this->cache_arr[$key])) {
             unset($this->cache_arr[$key]);
         }
@@ -428,9 +419,6 @@ class Memcached implements CatchInterface
      */
     public function getMultiple($keys, $default = null)
     {
-        if (null === $this->cache_arr) {
-            $this->cache_arr = [];
-        }
         $result = array();
         //先检查在本地数组里有没能， 或者有没有被删除
         if (!empty($this->cache_arr) || !empty($this->del_arr)) {
@@ -496,12 +484,6 @@ class Memcached implements CatchInterface
     public function setMultiple($values, $ttl = null)
     {
         $ttl = $this->ttl($ttl);
-        if (null === $this->cache_arr) {
-            $this->cache_arr = [];
-        }
-        if (null === $this->cache_save) {
-            $this->cache_save = [];
-        }
         foreach ($values as $name => $value) {
             $this->cache_arr[$name] = $value;
             $this->cache_save[$name] = array($value, $ttl);
@@ -674,10 +656,9 @@ class Memcached implements CatchInterface
      */
     public function commit()
     {
-        if (empty($this->cache_save)) {
-            return;
-        }
         $this->commitSet();
+        $this->commitDelete();
+        $this->cleanup();
     }
 
     /**
@@ -757,7 +738,7 @@ class Memcached implements CatchInterface
      */
     public function rollback()
     {
-        // TODO: Implement rollback() method.
+        $this->cleanup();
     }
 
     /**
@@ -766,7 +747,7 @@ class Memcached implements CatchInterface
      */
     public function cleanup()
     {
-        // TODO: Implement cleanup() method.
+        $this->cache_save = $this->_token_arr = $this->del_arr = $this->cache_add = null;
     }
 
     /**
@@ -850,9 +831,6 @@ class Memcached implements CatchInterface
      */
     private function doGet($key, $default, $need_token = false)
     {
-        if (null === $this->cache_arr) {
-            $this->cache_arr = [];
-        }
         //在缓存里已经有值，如果需要token，必须事先有token值，因为通过getMultiple方法拿不到token
         if (($need_token && isset($this->_token_arr[$key]))
             || (!$need_token && isset($this->cache_arr[$key]))
@@ -887,9 +865,6 @@ class Memcached implements CatchInterface
                     return $this->retry(array($this, 'get'), func_get_args());
                 }
             }
-        }
-        if (null === $this->_token_arr) {
-            $this->_token_arr = [];
         }
         if (null !== $token) {
             $this->_token_arr[$key] = $token;
@@ -932,6 +907,10 @@ class Memcached implements CatchInterface
             if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
                 return $this->retry(array($this, 'casSet'), func_get_args());
             }
+        }
+        else{
+            unset($this->_token_arr[$key], $this->cache_save[$key]);
+            $this->cache_arr[$key] = $value;
         }
         return $ret;
     }
