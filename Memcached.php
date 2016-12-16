@@ -813,13 +813,18 @@ class Memcached implements CatchInterface
 
     /**
      * 获取一个值，同时将它的token值存起来
-     * @param string $key
-     * @param null $default
+     * @param string $key 缓存键名
+     * @param null $default 默认值
+     * @param mixed $token token值
      * @return mixed
      */
-    public function casGet($key, $default = null)
+    public function casGet($key, $default = null, &$token = '')
     {
-        return $this->doGet($key, $default, true);
+        $re = $this->doGet($key, $default, true);
+        if (isset($this->_token_arr[$key])) {
+            $token = $this->_token_arr[$key];
+        }
+        return $re;
     }
 
     /**
@@ -883,19 +888,22 @@ class Memcached implements CatchInterface
      * @param string $key 缓存键名
      * @param mixed $value 值
      * @param null|int $ttl 过期时间
+     * @param null|float $token token值
      * @return bool
      */
-    public function casSet($key, $value, $ttl = null)
+    public function casSet($key, $value, $ttl = null, $token = null)
     {
         if ($this->_is_disabled) {
             return false;
         }
         //之前没有获取过token值，无法进行下去
-        if (!isset($this->_token_arr[$key])) {
-            return false;
+        if (null === $token) {
+            if (!isset($this->_token_arr[$key])){
+                return false;
+            }
+            $token = $this->_token_arr[$key];
         }
         $cache_handle = $this->getCacheHandle();
-        $token = $this->_token_arr[$key];
         $save_key = $this->make_key($key);
         $ttl = $this->ttl($ttl);
         $ret = $cache_handle->cas($token, $save_key, $value, $ttl);
