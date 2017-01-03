@@ -16,14 +16,19 @@
   ],
   "require": {
     "php": ">=5.5.0",
-    "ffan/php/utils": "~1.0",
-    "ffan/php/logger": "~1.0"
+    "ffan/php/utils": "*",
+    "ffan/php/logger": "*"
   },
   "autoload": {
-  "psr-4": {"ffan\\php\\cache\\": ""}
-},
+    "psr-4": {
+      "ffan\\php\\cache\\": ""
+    }
+  },
   "minimum-stability": "dev",
   "archive": {
-    "exclude": ["test", ".gitignore"]
+    "exclude": [
+      "test",
+      ".gitignore"
+    ]
   }
 }
