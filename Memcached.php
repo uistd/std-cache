@@ -11,7 +11,7 @@ use Psr\log\LoggerInterface;
  * Class Memcached
  * @package ffan\php\cache
  */
-class Memcached implements CatchInterface
+class Memcached implements CacheInterface
 {
     /**
      * server 不可用

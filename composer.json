@@ -16,6 +16,7 @@
   ],
   "require": {
     "php": ">=5.5.0",
+    "ffan/php/event": "*",
     "ffan/php/utils": "*",
     "ffan/php/logger": "*"
   },
