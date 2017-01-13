@@ -11,9 +11,9 @@ use ffan\php\utils\InvalidConfigException;
 class CacheFactory extends FFanFactory
 {
     /**
-     * 配置组名
+     * @var string 配置组名
      */
-    const CONFIG_GROUP = 'ffan-cache';
+    protected static $config_group = 'ffan-cache';
 
     /**
      * @var array 别名
@@ -45,6 +45,10 @@ class CacheFactory extends FFanFactory
      */
     protected static function defaultInstance($config_name, $conf_arr)
     {
-        return new Memcached($config_name, $conf_arr);
+        if ('apc' === $config_name) {
+            return new Apc($config_name, $conf_arr);
+        } else {
+            return new Memcached($config_name, $conf_arr);
+        }
     }
 }
