@@ -124,22 +124,4 @@ interface CacheInterface
      * @return bool
      */
     public function expiresAfter($key, $time);
-
-    /**
-     * 提交
-     * @return void
-     */
-    public function commit();
-
-    /**
-     * 回滚
-     * @return void
-     */
-    public function rollback();
-
-    /**
-     * 清理内存
-     * @return void
-     */
-    public function cleanup();
 }

@@ -1,12 +1,96 @@
 <?php
 namespace ffan\php\cache;
 
+use ffan\php\utils\Transaction;
+use Psr\Log\LoggerInterface;
+
 /**
  * Class Apc
  * @package ffan\php\cache
  */
-class Apc implements CacheInterface
+class Apc extends Transaction implements CacheInterface
 {
+    /**
+     * @var array 已经获取过的缓存
+     */
+    private $cache_arr;
+
+    /**
+     * @var array 待保存的缓存
+     */
+    private $cache_save;
+
+    /**
+     * @var string key前缀
+     */
+    private $key_prefix;
+
+    /**
+     * @var string 配置名
+     */
+    private $conf_name;
+
+    /**
+     * @var array 配置项
+     */
+    private $config_set;
+
+    /**
+     * @var int 默认的过期时间
+     */
+    private $default_ttl;
+
+    /**
+     * Memcached constructor.
+     * @param $config_name
+     * @param array $config_set
+     */
+    public function __construct($config_name, array $config_set)
+    {
+        parent::__construct();
+        if (!function_exists('apc_add')) {
+            throw new \RuntimeException('Apc(u) extension needed!');
+        }
+        $this->conf_name = $config_name;
+        $this->config_set = $config_set;
+        $this->key_prefix = isset($config_set[$config_name]) ? $config_set[$config_name] : $config_name;
+    }
+
+    /**
+     * 析构
+     */
+    public function __destruct()
+    {
+        parent::__destruct();
+        $this->cleanup();
+    }
+
+    /**
+     * 生成缓存key
+     * @param string $key
+     * @return string
+     */
+    private function keyName($key)
+    {
+        return $this->key_prefix . '_' . $key;
+    }
+
+    /**
+     * 生成过期时间
+     * @param int $ttl 过期时间
+     * @return int
+     */
+    private function ttl($ttl)
+    {
+        if (null === $this->default_ttl) {
+            $def_ttl = isset($config_set['default_ttl']) ? (int)$config_set['default_ttl'] : 0;
+            $this->default_ttl = $def_ttl > 0 ? $def_ttl : 1800;
+        }
+        if (null === $ttl || $ttl < 0) {
+            return $this->default_ttl;
+        }
+        return $ttl;
+    }
 
     /**
      * 获取一个缓存.
@@ -16,7 +100,20 @@ class Apc implements CacheInterface
      */
     public function get($key, $default = null)
     {
-        // TODO: Implement get() method.
+        //已经获取过了
+        if (isset($this->cache_arr[$key])) {
+            return $this->cache_arr[$key];
+        } //还未写入的
+        elseif (isset($this->cache_save[$key])) {
+            return $this->cache_save[$key][0];
+        }
+        $re = apc_fetch($key, $is_ok);
+        if (!$is_ok) {
+            $re = $default;
+        } else {
+            $this->cache_arr[$key] = $re;
+        }
+        return $re;
     }
 
     /**
@@ -28,7 +125,8 @@ class Apc implements CacheInterface
      */
     public function set($key, $value, $ttl = null)
     {
-        // TODO: Implement set() method.
+        $ttl = $this->ttl($ttl);
+        $this->cache_save[$key] = [$value, $ttl];
     }
 
     /**
@@ -39,7 +137,8 @@ class Apc implements CacheInterface
      */
     public function casGet($key, $default = null)
     {
-        // TODO: Implement casGet() method.
+        $re = $this->get($key, $default);
+        return $re;
     }
 
     /**
@@ -51,7 +150,23 @@ class Apc implements CacheInterface
      */
     public function casSet($key, $value, $ttl = null)
     {
-        // TODO: Implement casSet() method.
+        //必须先获取一次
+        if (!isset($this->cache_arr[$key])) {
+            return false;
+        }
+        if (!is_int($value)) {
+            throw new \InvalidArgumentException('Apc casSet value must be int');
+        }
+        $old_value = $this->cache_arr[$key];
+        if (!is_int($old_value)) {
+            return false;
+        }
+        $save_key = $this->keyName($key);
+        $re = apc_cas($save_key, $old_value, $value);
+        if ($re) {
+            $this->cache_arr[$key] = $value;
+        }
+        return $re;
     }
 
     /**
@@ -61,7 +176,9 @@ class Apc implements CacheInterface
      */
     public function delete($key)
     {
-        // TODO: Implement delete() method.
+        $key_name = $this->keyName($key);
+        unset($this->cache_save[$key], $this->cache_arr[$key]);
+        apc_delete($key_name);
     }
 
     /**
@@ -70,7 +187,7 @@ class Apc implements CacheInterface
      */
     public function clear()
     {
-        // TODO: Implement clear() method.
+        apc_clear_cache('user');
     }
 
     /**
@@ -112,7 +229,14 @@ class Apc implements CacheInterface
      */
     public function has($key)
     {
-        // TODO: Implement has() method.
+        if (isset($this->cache_save[$key]) || isset($this->cache_arr[$key])) {
+            return true;
+        }
+        $re = apc_fetch($this->keyName($key), $has_cache);
+        if ($has_cache) {
+            $this->cache_arr[$key] = $re;
+        }
+        return $has_cache;
     }
 
     /**
@@ -124,7 +248,9 @@ class Apc implements CacheInterface
      */
     public function add($key, $value, $ttl = null)
     {
-        // TODO: Implement add() method.
+        $key_name = $this->keyName($key);
+        $ttl = $this->ttl($ttl);
+        return apc_add($key_name, $value, $ttl);
     }
 
     /**
@@ -135,7 +261,9 @@ class Apc implements CacheInterface
      */
     public function increment($key, $step = 1)
     {
-        // TODO: Implement increment() method.
+        $key_name = $this->keyName($key);
+        $re = apc_inc($key_name, $step);
+        return $re;
     }
 
     /**
@@ -146,7 +274,9 @@ class Apc implements CacheInterface
      */
     public function decrement($key, $step = 1)
     {
-        // TODO: Implement decrement() method.
+        $key_name = $this->keyName($key);
+        $re = apc_dec($key_name, $step);
+        return $re;
     }
 
     /**
@@ -157,7 +287,7 @@ class Apc implements CacheInterface
      */
     public function expiresAt($key, $time)
     {
-        // TODO: Implement expiresAt() method.
+        return $this->expiresAfter($key, (int)$time - time());
     }
 
     /**
@@ -168,7 +298,14 @@ class Apc implements CacheInterface
      */
     public function expiresAfter($key, $time)
     {
-        // TODO: Implement expiresAfter() method.
+        //不存在key
+        if (!$this->has($key)) {
+            return false;
+        }
+        $ttl = $this->ttl($time);
+        $value = $this->get($key);
+        $this->set($key, $value, $ttl);
+        return true;
     }
 
     /**
@@ -177,7 +314,14 @@ class Apc implements CacheInterface
      */
     public function commit()
     {
-        // TODO: Implement commit() method.
+        if (!$this->cache_save) {
+            return;
+        }
+        foreach ($this->cache_save as $name => $tmp) {
+            $key = $this->keyName($name);
+            apc_store($key, $tmp[0], $tmp[1]);
+        }
+        $this->cache_arr = null;
     }
 
     /**
@@ -186,7 +330,7 @@ class Apc implements CacheInterface
      */
     public function rollback()
     {
-        // TODO: Implement rollback() method.
+        $this->cache_save = null;
     }
 
     /**
@@ -195,6 +339,6 @@ class Apc implements CacheInterface
      */
     public function cleanup()
     {
-        // TODO: Implement cleanup() method.
+        $this->cache_arr = $this->cache_save = null;
     }
 }

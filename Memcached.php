@@ -3,15 +3,15 @@ namespace ffan\php\cache;
 
 use ffan\php\logger\LoggerFactory;
 use ffan\php\utils\Debug as FFanDebug;
-use ffan\php\utils\Config as FFanConfig;
 use ffan\php\utils\InvalidConfigException;
+use ffan\php\utils\Transaction;
 use Psr\log\LoggerInterface;
 
 /**
  * Class Memcached
  * @package ffan\php\cache
  */
-class Memcached implements CacheInterface
+class Memcached extends Transaction implements CacheInterface
 {
     /**
      * server 不可用
@@ -61,73 +61,76 @@ class Memcached implements CacheInterface
     private $cache_save;
 
     /**
-     * 新增加的cache
-     * @var array
-     */
-    private $cache_add;
-
-    /**
-     * 准备删除的键
-     * @var array
-     */
-    private $del_arr;
-
-    /**
      * 连接对象
      * @var \Memcached
      */
-    private $_cache_handle;
+    private $cache_handle;
 
     /**
      * 配置的缓存类
      * @var string
      */
-    private $_conf_name;
+    private $conf_name;
+
+    /**
+     * @var array 配置
+     */
+    private $config_set;
 
     /**
      * 键名前缀
      * @var string
      */
-    private $_key_category = '';
+    private $key_category = '';
 
     /**
      * @var bool 是否初始化好了
      */
-    private $_is_init = false;
+    private $is_init = false;
 
     /**
      * @var LoggerInterface 日志
      */
-    private $_logger;
+    private $logger_handle;
 
     /**
      * @var int 默认的缓存生存时间
      */
-    private $_default_ttl = 7200;
+    private $default_ttl = 7200;
 
     /**
      * @var bool 是否是retry
      */
-    private $_is_retry = false;
+    private $is_retry_flag = false;
 
     /**
      * @var bool 缓存是否已经不可用了（缓存不可用时，系统继续）
      */
-    private $_is_disabled = false;
+    private $is_disabled = false;
 
     /**
      * 存储token值的数组
      * @var array
      */
-    private $_token_arr;
+    private $cas_token_arr;
 
     /**
      * Memcached constructor.
-     * @param string $conf_name 配置名称
+     * @param $config_name
+     * @param array $config_set
      */
-    public function __construct($conf_name)
+    public function __construct($config_name, array $config_set)
     {
-        $this->_conf_name = $conf_name;
+        parent::__construct();
+    }
+
+    /**
+     * 析构
+     */
+    public function __destruct()
+    {
+        parent::__destruct();
+        $this->cleanup();
     }
 
     /**
@@ -135,27 +138,26 @@ class Memcached implements CacheInterface
      */
     private function init()
     {
-        if ($this->_is_init) {
+        if ($this->is_init) {
             return;
         }
-        $this->_is_init = true;
-        $config_key = 'cache.' . $this->_conf_name;
-        $conf_arr = FFanConfig::get($config_key);
-        if (!is_array($conf_arr) || !isset($conf_arr['server'])) {
-            throw new InvalidConfigException($config_key);
+        $this->is_init = true;
+        $conf_arr = $this->config_set;
+        if (!isset($conf_arr['server'])) {
+            throw new InvalidConfigException(CacheFactory::configGroupName($this->conf_name, 'server'), 'key is not exist!');
         }
         //如果设置了分类，所有的键名前都会加上分类前缀
         if (isset($conf_arr['category'])) {
-            $this->_key_category = $conf_arr['category'];
+            $this->key_category = $conf_arr['category'];
         }
         //默认的缓存生存期
         if (isset($conf_arr['default_ttl'])) {
             $default_ttl = (int)$conf_arr['default_ttl'];
             if ($default_ttl > 0) {
-                $this->_default_ttl = $default_ttl;
+                $this->default_ttl = $default_ttl;
             }
         }
-        $this->_logger = LoggerFactory::get(isset($conf_arr['log_conf']) ? $conf_arr['log_conf'] : null);
+        $this->logger_handle = LoggerFactory::get(isset($conf_arr['log_conf']) ? $conf_arr['log_conf'] : null);
         $this->connect();
     }
 
@@ -164,8 +166,8 @@ class Memcached implements CacheInterface
      */
     private function connect()
     {
-        $cache_obj = new \Memcached($this->_conf_name);
-        $conf_arr = FFanConfig::get('cache.' . $this->_conf_name);
+        $cache_obj = new \Memcached($this->conf_name);
+        $conf_arr = $this->config_set;
         $server_conf = $conf_arr['server'];
         $current_list = $cache_obj->getServerList();
         $need_add = true;
@@ -184,13 +186,13 @@ class Memcached implements CacheInterface
             //关闭所有已经打开的链接
             if ($need_add) {
                 //切换服务器
-                $this->_logger->notice($this->logMsg('remove server', 'server list', $current_list));
-                $this->_logger->notice($this->logMsg('add server', 'new server list', $server_conf));
+                $this->logger_handle->notice($this->logMsg('remove server', 'server list', $current_list));
+                $this->logger_handle->notice($this->logMsg('add server', 'new server list', $server_conf));
                 $cache_obj->resetServerList();
             }
         }
         if ($need_add) {
-            $this->_logger->info($this->logMsg('Add server', '', $server_conf));
+            $this->logger_handle->info($this->logMsg('Add server', '', $server_conf));
             $cache_obj->setOption(\Memcached::OPT_RECV_TIMEOUT, 1000);
             $cache_obj->setOption(\Memcached::OPT_SEND_TIMEOUT, 1000);
             $cache_obj->setOption(\Memcached::OPT_TCP_NODELAY, true);
@@ -209,10 +211,10 @@ class Memcached implements CacheInterface
             //如果添加服务器失败，表示系统已经不可用
             if (false === $ret) {
                 $this->logResultMessage($cache_obj->getResultCode(), 'Add server, ret:' . $ret, $server_conf);
-                $this->_is_disabled = true;
+                $this->is_disabled = true;
             }
         }
-        $this->_cache_handle = $cache_obj;
+        $this->cache_handle = $cache_obj;
     }
 
     /**
@@ -220,8 +222,8 @@ class Memcached implements CacheInterface
      */
     private function reconnect()
     {
-        $this->_logger->notice($this->logMsg('reconnect'));
-        $this->_cache_handle->resetServerList();
+        $this->logger_handle->notice($this->logMsg('reconnect'));
+        $this->cache_handle->resetServerList();
         $this->connect();
     }
 
@@ -232,13 +234,13 @@ class Memcached implements CacheInterface
      */
     private function make_key($key)
     {
-        if ($this->_is_init) {
+        if ($this->is_init) {
             $this->init();
         }
-        if (empty($this->_key_category)) {
+        if (empty($this->key_category)) {
             return $key;
         }
-        return $this->_key_category . '.' . $key;
+        return $this->key_category . '.' . $key;
     }
 
     /**
@@ -247,10 +249,10 @@ class Memcached implements CacheInterface
      */
     private function getCacheHandle()
     {
-        if (!$this->_is_init) {
+        if (!$this->is_init) {
             $this->init();
         }
-        return $this->_cache_handle;
+        return $this->cache_handle;
     }
 
     /**
@@ -260,10 +262,10 @@ class Memcached implements CacheInterface
      */
     private function unpackKey($name)
     {
-        if (empty($this->_key_category)) {
+        if (empty($this->key_category)) {
             return $name;
         }
-        $prefix = $this->_key_category . '.';
+        $prefix = $this->key_category . '.';
         return substr($name, strlen($prefix));
     }
 
@@ -287,16 +289,16 @@ class Memcached implements CacheInterface
     private function retry($func, $args)
     {
         //如果重试后，又调用了retry函数，表示服务已经不可用了
-        if ($this->_is_retry) {
-            $this->_logger->error('Server down!!!');
-            $this->_is_disabled = true;
+        if ($this->is_retry_flag) {
+            $this->logger_handle->error('Server down!!!');
+            $this->is_disabled = true;
         }//重连服务器
         else {
-            $this->_is_retry = true;
+            $this->is_retry_flag = true;
             $this->reconnect();
         }
         $ret = call_user_func_array($func, $args);
-        $this->_is_retry = false;
+        $this->is_retry_flag = false;
         return $ret;
     }
 
@@ -308,11 +310,11 @@ class Memcached implements CacheInterface
     private function ttl($ttl)
     {
         if (null === $ttl) {
-            return $this->_default_ttl;
+            return $this->default_ttl;
         } else {
             $ttl = (int)$ttl;
             if ($ttl < 1) {
-                $ttl = $this->_default_ttl;
+                $ttl = $this->default_ttl;
             }
             return $ttl;
         }
@@ -328,9 +330,6 @@ class Memcached implements CacheInterface
     public function set($key, $value, $ttl = null)
     {
         $ttl = $this->ttl($ttl);
-        if (isset($this->del_arr[$key])) {
-            unset($this->del_arr[$key]);
-        }
         $this->cache_arr[$key] = $value;
         $this->cache_save[$key] = array($value, $ttl);
     }
@@ -342,22 +341,8 @@ class Memcached implements CacheInterface
      */
     public function delete($key)
     {
-        if (isset($this->cache_arr[$key])) {
-            unset($this->cache_arr[$key]);
-        }
-        if (isset($this->cache_save[$key])) {
-            unset($this->cache_save[$key]);
-        }
-        if (isset($this->_token_arr[$key])) {
-            unset($this->_token_arr[$key]);
-        }
-        //如果已经在add列表中，要真实删除
-        if (isset($this->cache_add[$key])) {
-            $re = $this->remove($key);
-        } else {
-            $this->del_arr[$key] = true;
-            $re = true;
-        }
+        unset($this->cache_arr[$key], $this->cache_save[$key], $this->cas_token_arr[$key]);
+        $re = $this->remove($key);
         return $re;
     }
 
@@ -368,16 +353,13 @@ class Memcached implements CacheInterface
      */
     private function remove($key)
     {
-        if (isset($this->del_arr[$key])) {
-            unset($this->del_arr[$key]);
-        }
-        if ($this->_is_disabled) {
+        if ($this->is_disabled) {
             return true;
         }
         $cache_handle = $this->getCacheHandle();
         $save_key = $this->make_key($key);
         $ret = $cache_handle->delete($save_key);
-        $this->_logger->info($this->logMsg('Delete', $key));
+        $this->logger_handle->info($this->logMsg('Delete', $key));
         if (false === $ret) {
             $result_code = $cache_handle->getResultCode();
             $this->logResultMessage($result_code, 'Delete', $key);
@@ -394,13 +376,13 @@ class Memcached implements CacheInterface
      */
     public function clear()
     {
-        if ($this->_is_disabled) {
+        if ($this->is_disabled) {
             return true;
         }
         $cache_handle = $this->getCacheHandle();
         $this->cleanup();
         $ret = $cache_handle->flush();
-        $this->_logger->notice($this->logMsg('Flush'));
+        $this->logger_handle->notice($this->logMsg('Flush'));
         if (false === $ret) {
             $result_code = $cache_handle->getResultCode();
             $this->logResultMessage($result_code, 'Flush', '');
@@ -426,9 +408,6 @@ class Memcached implements CacheInterface
                 if (isset($this->cache_arr[$name])) {
                     $result[$name] = false === $this->cache_arr[$name] ? $default : $this->cache_arr[$name];
                     unset($keys[$i]);
-                } elseif (isset($this->del_arr[$name])) {
-                    $result[$name] = $default;
-                    unset($keys[$i]);
                 }
             }
         }
@@ -436,7 +415,7 @@ class Memcached implements CacheInterface
         if (empty($keys)) {
             return $result;
         }//服务器已经不可用了
-        elseif ($this->_is_disabled) {
+        elseif ($this->is_disabled) {
             foreach ($keys as $name) {
                 $result[$name] = $default;
             }
@@ -449,7 +428,7 @@ class Memcached implements CacheInterface
                 $new_keys[] = $this->make_key($name);
             }
             $result_list = $cache_handle->getMulti($new_keys, $cas_arr, \Memcached::GET_PRESERVE_ORDER);
-            $this->_logger->info($this->logMsg('GetMultiple', $keys, $result_list));
+            $this->logger_handle->info($this->logMsg('GetMultiple', $keys, $result_list));
             if (false === $result_list) {
                 $result_code = $cache_handle->getResultCode();
                 $this->logResultMessage($result_code, 'Get', $new_keys);
@@ -529,20 +508,13 @@ class Memcached implements CacheInterface
             return false;
         }
         //如果服务器不可用了，直接返回false
-        if (!$this->_is_disabled) {
+        if (!$this->is_disabled) {
             return false;
         }
-        //如果在待删除列表中，表示服务器端可能有这个key，要立刻、立即、马上做真实删除操作，不然肯定add不成功
-        if (isset($this->del_arr[$key])) {
-            $this->remove($key);
-        }
         $cache_handle = $this->getCacheHandle();
-        if (null === $this->cache_add) {
-            $this->cache_add = [];
-        }
         $save_key = $this->make_key($key);
         $ret = $cache_handle->add($save_key, $value, $ttl);
-        $this->_logger->info($this->logMsg('Add', $key, $ret));
+        $this->logger_handle->info($this->logMsg('Add', $key, $ret));
         if (false === $ret) {
             $result_code = $cache_handle->getResultCode();
             $this->logResultMessage($result_code, 'Add', $key);
@@ -552,7 +524,6 @@ class Memcached implements CacheInterface
             }
         }
         $this->cache_arr[$key] = $value;
-        $this->cache_add[$key] = true;
         return $ret;
     }
 
@@ -564,13 +535,13 @@ class Memcached implements CacheInterface
      */
     public function increment($key, $step = 1)
     {
-        if ($this->_is_disabled) {
+        if ($this->is_disabled) {
             return false;
         }
         $cache_handle = $this->getCacheHandle();
         $save_key = $this->make_key($key);
         $ret = $cache_handle->increment($save_key, $step);
-        $this->_logger->info($this->logMsg('Increment', $key, $ret));
+        $this->logger_handle->info($this->logMsg('Increment', $key, $ret));
         if (false === $ret) {
             $result_code = $cache_handle->getResultCode();
             $this->logResultMessage($result_code, 'Increment', $key);
@@ -589,13 +560,13 @@ class Memcached implements CacheInterface
      */
     public function decrement($key, $step = 1)
     {
-        if ($this->_is_disabled) {
+        if ($this->is_disabled) {
             return false;
         }
         $cache_handle = $this->getCacheHandle();
         $save_key = $this->make_key($key);
         $ret = $cache_handle->decrement($save_key, $step);
-        $this->_logger->info($this->logMsg('Decrement', $key, $ret));
+        $this->logger_handle->info($this->logMsg('Decrement', $key, $ret));
         if (false === $ret) {
             $result_code = $cache_handle->getResultCode();
             $this->logResultMessage($result_code, 'Decrement', $key);
@@ -615,7 +586,7 @@ class Memcached implements CacheInterface
     public function expiresAt($key, $time)
     {
         $time = $this->ttl($time);
-        if ($this->_is_disabled) {
+        if ($this->is_disabled) {
             return false;
         }
         //如果在待存列表中，缓存起来异步操作
@@ -626,7 +597,7 @@ class Memcached implements CacheInterface
             $cache_handle = $this->getCacheHandle();
             $save_key = $this->make_key($key);
             $ret = $cache_handle->touch($save_key, $time);
-            $this->_logger->info($this->logMsg('expiresAt:' . $time, $key, $ret));
+            $this->logger_handle->info($this->logMsg('expiresAt:' . $time, $key, $ret));
             if (false === $ret) {
                 $result_code = $cache_handle->getResultCode();
                 $this->logResultMessage($result_code, 'expiresAt', $key);
@@ -667,7 +638,7 @@ class Memcached implements CacheInterface
      */
     private function commitSet()
     {
-        if (empty($this->cache_save) || $this->_is_disabled) {
+        if (empty($this->cache_save) || $this->is_disabled) {
             return true;
         }
         $new_arr = array();
@@ -688,12 +659,12 @@ class Memcached implements CacheInterface
             //如果有多个，批量更新
             if (count($value_arr) > 1) {
                 $ret = $cache_handle->setMulti($value_arr, $ttl);
-                $this->_logger->debug($this->logMsg('setMulti', 'multipleKeys', $value_arr));
+                $this->logger_handle->debug($this->logMsg('setMulti', 'multipleKeys', $value_arr));
             } else {
                 $key = key($value_arr);
                 $value = $value_arr[$key];
                 $ret = $cache_handle->set($key, $value, $ttl);
-                $this->_logger->debug($this->logMsg('setMulti', 'multipleKeys', $value_arr));
+                $this->logger_handle->debug($this->logMsg('setMulti', 'multipleKeys', $value_arr));
             }
             if (false === $ret) {
                 $result_code = $cache_handle->getResultCode();
@@ -712,7 +683,7 @@ class Memcached implements CacheInterface
      */
     private function commitDelete()
     {
-        if (empty($this->del_arr) || $this->_is_disabled) {
+        if (empty($this->del_arr) || $this->is_disabled) {
             return true;
         }
         $keys = array();
@@ -721,7 +692,7 @@ class Memcached implements CacheInterface
         }
         $cache_handle = $this->getCacheHandle();
         $ret = $cache_handle->deleteMulti($keys);
-        $this->_logger->debug($this->logMsg('deleteMulti', $keys, $ret));
+        $this->logger_handle->debug($this->logMsg('deleteMulti', $keys, $ret));
         if (false === $ret) {
             $result_code = $cache_handle->getResultCode();
             $this->logResultMessage($result_code, 'deleteMulti', $keys);
@@ -747,7 +718,7 @@ class Memcached implements CacheInterface
      */
     public function cleanup()
     {
-        $this->cache_save = $this->_token_arr = $this->del_arr = $this->cache_add = null;
+        $this->cache_save = $this->cas_token_arr = null;
     }
 
     /**
@@ -760,7 +731,7 @@ class Memcached implements CacheInterface
      */
     public function logMsg($action, $key = '', $val = null, $ext_msg = null)
     {
-        $str = '[Memcached ' . $this->_conf_name . ']' . $action;
+        $str = '[Memcached ' . $this->conf_name . ']' . $action;
         if (!empty($key)) {
             if (is_array($key)) {
                 $key = join(',', $key);
@@ -807,8 +778,8 @@ class Memcached implements CacheInterface
         if (!isset($code_arr[$ret_code])) {
             return;
         }
-        $msg = ' resultCode:' . $ret_code . ' resultMessage:' . $this->_cache_handle->getResultMessage();
-        $this->_logger->warning($this->logMsg($action, $key, $msg, $ext_msg));
+        $msg = ' resultCode:' . $ret_code . ' resultMessage:' . $this->cache_handle->getResultMessage();
+        $this->logger_handle->warning($this->logMsg($action, $key, $msg, $ext_msg));
     }
 
     /**
@@ -821,8 +792,8 @@ class Memcached implements CacheInterface
     public function casGet($key, $default = null, &$token = '')
     {
         $re = $this->doGet($key, $default, true);
-        if (isset($this->_token_arr[$key])) {
-            $token = $this->_token_arr[$key];
+        if (isset($this->cas_token_arr[$key])) {
+            $token = $this->cas_token_arr[$key];
         }
         return $re;
     }
@@ -837,7 +808,7 @@ class Memcached implements CacheInterface
     private function doGet($key, $default, $need_token = false)
     {
         //在缓存里已经有值，如果需要token，必须事先有token值，因为通过getMultiple方法拿不到token
-        if (($need_token && isset($this->_token_arr[$key]))
+        if (($need_token && isset($this->cas_token_arr[$key]))
             || (!$need_token && isset($this->cache_arr[$key]))
         ) {
             $ret = $this->cache_arr[$key];
@@ -846,12 +817,8 @@ class Memcached implements CacheInterface
             }
             return $ret;
         }
-        //已经删除了
-        if (isset($this->del_arr[$key])) {
-            return $default;
-        }
         //系统已经不可用了
-        if ($this->_is_disabled) {
+        if ($this->is_disabled) {
             return $default;
         }
         $cache_handle = $this->getCacheHandle();
@@ -859,7 +826,7 @@ class Memcached implements CacheInterface
         $save_key = $this->make_key($key);
         $token = null;
         $ret = $cache_handle->get($save_key, null, $token);
-        $this->_logger->debug($this->logMsg('Get', $key, $ret));
+        $this->logger_handle->debug($this->logMsg('Get', $key, $ret));
         $result_code = 0;
         if (false === $ret) {
             $result_code = $cache_handle->getResultCode();
@@ -872,7 +839,7 @@ class Memcached implements CacheInterface
             }
         }
         if (null !== $token) {
-            $this->_token_arr[$key] = $token;
+            $this->cas_token_arr[$key] = $token;
         }
         //缓存起来
         $this->cache_arr[$key] = $ret;
@@ -893,21 +860,21 @@ class Memcached implements CacheInterface
      */
     public function casSet($key, $value, $ttl = null, $token = null)
     {
-        if ($this->_is_disabled) {
+        if ($this->is_disabled) {
             return false;
         }
         //之前没有获取过token值，无法进行下去
         if (null === $token) {
-            if (!isset($this->_token_arr[$key])){
+            if (!isset($this->cas_token_arr[$key])){
                 return false;
             }
-            $token = $this->_token_arr[$key];
+            $token = $this->cas_token_arr[$key];
         }
         $cache_handle = $this->getCacheHandle();
         $save_key = $this->make_key($key);
         $ttl = $this->ttl($ttl);
         $ret = $cache_handle->cas($token, $save_key, $value, $ttl);
-        $this->_logger->debug($this->logMsg('CasSet', $key, $value, 'ret:' . $ret));
+        $this->logger_handle->debug($this->logMsg('CasSet', $key, $value, 'ret:' . $ret));
         if (false === $ret) {
             $result_code = $cache_handle->getResultCode();
             $this->logResultMessage($result_code, 'CasSet', $key);
@@ -916,7 +883,7 @@ class Memcached implements CacheInterface
                 return $this->retry(array($this, 'casSet'), func_get_args());
             }
         } else {
-            unset($this->_token_arr[$key], $this->cache_save[$key]);
+            unset($this->cas_token_arr[$key], $this->cache_save[$key]);
             $this->cache_arr[$key] = $value;
         }
         return $ret;
