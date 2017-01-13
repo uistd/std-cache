@@ -19,7 +19,7 @@ class CacheFactory extends FFanFactory
      * @var array 别名
      */
     protected static $class_alias = array(
-        'apc' => '\ffan\php\cache\Apc',
+        'apc' => 'ffan\php\cache\Apc',
     );
 
     /**

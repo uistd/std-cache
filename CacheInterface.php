@@ -60,7 +60,7 @@ interface CacheInterface
      * @param mixed $default 当缓存不存在时的默认值
      * @return array 如果值不存在的key会以default填充
      */
-    public function getMultiple($keys, $default = null);
+    public function getMultiple(array $keys, $default = null);
 
     /**
      * 批量设置缓存
@@ -68,14 +68,14 @@ interface CacheInterface
      * @param null|int $ttl
      * @return bool
      */
-    public function setMultiple($values, $ttl = null);
+    public function setMultiple(array $values, $ttl = null);
 
     /**
      * 批量删除
      * @param array $keys 需要删除的keys
      * @return bool
      */
-    public function deleteMultiple($keys);
+    public function deleteMultiple(array $keys);
 
     /**
      * 判断缓存中是否有某个值
@@ -99,7 +99,7 @@ interface CacheInterface
      * @param int $step 步长
      * @return bool|int 如果值不存在，将返回false 其它情况元素的值
      */
-    public function increment($key, $step = 1);
+    public function increase($key, $step = 1);
 
     /**
      * 在一个键上做自减
@@ -107,7 +107,7 @@ interface CacheInterface
      * @param int $step 步长
      * @return bool|int 如果值不存在，将返回false
      */
-    public function decrement($key, $step = 1);
+    public function decrease($key, $step = 1);
 
     /**
      * 设置一个缓存的过期时间（精确时间）

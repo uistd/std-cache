@@ -157,7 +157,12 @@ class Memcached extends Transaction implements CacheInterface
                 $this->default_ttl = $default_ttl;
             }
         }
-        $this->logger_handle = LoggerFactory::get(isset($conf_arr['log_conf']) ? $conf_arr['log_conf'] : null);
+        //如果指定了日志对象
+        if (isset($conf_arr['logger_name'])) {
+            $this->logger_handle = LoggerFactory::get($conf_arr['logger_name']);
+        } else {
+            $this->logger_handle = LoggerFactory::get();
+        }
         $this->connect();
     }
 
@@ -399,7 +404,7 @@ class Memcached extends Transaction implements CacheInterface
      * @param mixed $default 当缓存不存在时的默认值
      * @return array 如果值不存在的key会以default填充
      */
-    public function getMultiple($keys, $default = null)
+    public function getMultiple(array $keys, $default = null)
     {
         $result = array();
         //先检查在本地数组里有没能， 或者有没有被删除
@@ -460,7 +465,7 @@ class Memcached extends Transaction implements CacheInterface
      * @param null|int $ttl
      * @return bool
      */
-    public function setMultiple($values, $ttl = null)
+    public function setMultiple(array $values, $ttl = null)
     {
         $ttl = $this->ttl($ttl);
         foreach ($values as $name => $value) {
@@ -475,7 +480,7 @@ class Memcached extends Transaction implements CacheInterface
      * @param array $keys 需要删除的keys
      * @return bool
      */
-    public function deleteMultiple($keys)
+    public function deleteMultiple(array $keys)
     {
         //其实是一个一个删除
         foreach ($keys as $name) {
@@ -533,7 +538,7 @@ class Memcached extends Transaction implements CacheInterface
      * @param int $step 步长
      * @return bool|int 如果值不存在，将返回false 其它情况元素的值
      */
-    public function increment($key, $step = 1)
+    public function increase($key, $step = 1)
     {
         if ($this->is_disabled) {
             return false;
@@ -558,7 +563,7 @@ class Memcached extends Transaction implements CacheInterface
      * @param int $step 步长
      * @return bool|int 如果值不存在，将返回false
      */
-    public function decrement($key, $step = 1)
+    public function decrease($key, $step = 1)
     {
         if ($this->is_disabled) {
             return false;
@@ -865,7 +870,7 @@ class Memcached extends Transaction implements CacheInterface
         }
         //之前没有获取过token值，无法进行下去
         if (null === $token) {
-            if (!isset($this->cas_token_arr[$key])){
+            if (!isset($this->cas_token_arr[$key])) {
                 return false;
             }
             $token = $this->cas_token_arr[$key];
