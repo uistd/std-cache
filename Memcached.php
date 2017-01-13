@@ -522,7 +522,7 @@ class Memcached implements CacheInterface
      * @param null|int $ttl 过期时间
      * @return bool
      */
-    public function add($key, $value, $ttl)
+    public function add($key, $value, $ttl = null)
     {
         //已经有了这个key了
         if (isset($this->cache_arr[$key])) {

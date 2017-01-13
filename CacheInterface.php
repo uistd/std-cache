@@ -91,7 +91,7 @@ interface CacheInterface
      * @param null|int $ttl 过期时间
      * @return bool
      */
-    public function add($key, $value, $ttl);
+    public function add($key, $value, $ttl = null);
 
     /**
      * 在一个键上做自增
