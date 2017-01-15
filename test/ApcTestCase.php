@@ -9,7 +9,7 @@ FFanConfig::addArray(
     array(
         'ffan-cache:main' => array(
             'category' => 'main',
-            'class' => 'apcs'
+            'class' => 'apc'
         ),
         'ffan-logger:web' => array(
             'file' => 'test',
@@ -20,4 +20,22 @@ FFanConfig::addArray(
     )
 );
 $apc = CacheFactory::get('main');
-print_r($apc);
+$apc->set('test', 'test apc string');
+$re = $apc->get('test');
+var_dump($re);
+
+$re = $apc->has('test');
+
+var_dump($re);
+
+$re = $apc->set('test2', 1);
+
+var_dump($re);
+
+$re = $apc->casSet('test2', 2);
+
+var_dump($re);
+
+$re = $apc->casSet('test2', 3);
+
+var_dump($re);

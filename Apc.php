@@ -198,15 +198,23 @@ class Apc extends Transaction implements CacheInterface
      */
     public function casSet($key, $value, $ttl = null)
     {
-        //必须先获取一次
-        if (!isset($this->cache_arr[$key])) {
+        //必须先获取一次，或者 set一次
+        if (!isset($this->cache_arr[$key]) && !isset($this->cache_save[$key])) {
             $this->getLogger()->warning('CAS_SET ' . $key . ' must get old value first!');
             return false;
         }
         if (!is_int($value)) {
             throw new \InvalidArgumentException('Apc casSet value must be int');
         }
+        //如果该缓存还没有正式写入
+        if (isset($this->cache_save[$key])) {
+            $tmp = $this->cache_save[$key];
+            apc_store($this->keyName($key), $tmp[0], $tmp[1]);
+            unset($this->cache_save[$key]);
+            $this->cache_arr[$key] = $tmp[0];
+        }
         $old_value = $this->cache_arr[$key];
+        var_dump($old_value);
         if (!is_int($old_value)) {
             return false;
         }
@@ -324,6 +332,10 @@ class Apc extends Transaction implements CacheInterface
         $key_name = $this->keyName($key);
         $ttl = $this->ttl($ttl);
         $re = apc_add($key_name, $value, $ttl);
+        //如果写入成功，加入到缓存中
+        if ($re) {
+            $this->cache_arr[$key_name] = $value;
+        }
         $this->getLogger()->info($this->logMsg('ADD', $key, $value, $re ? 'success' : 'failed'));
         return $re;
     }
@@ -439,7 +451,7 @@ class Apc extends Transaction implements CacheInterface
             $str .= ' Key:' . $key;
         }
         if (null !== $val) {
-            $str .= ' Value:' . FFanDebug::varFormat($val);
+            $str .= ' Value:' . FFanDebug::varFormat($val) .' ';
         }
         if (null !== $ext_msg) {
             $str .= FFanDebug::varFormat($ext_msg);
