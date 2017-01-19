@@ -284,7 +284,39 @@ class Memcached extends Transaction implements CacheInterface
      */
     public function get($key, $default = null)
     {
-        return $this->doGet($key, $default);
+        //在缓存里已经有值
+        if (isset($this->cas_token_arr[$key])) {
+            $ret = $this->cache_arr[$key];
+            $this->logger_handle->debug($this->logMsg('Get', $key, $ret, 'from $this->cache_arr'));
+            return $ret;
+        }
+        //系统已经不可用了
+        if ($this->is_disabled) {
+            return $default;
+        }
+        $cache_handle = $this->getCacheHandle();
+        //save_key必须在getCacheHandle之后
+        $save_key = $this->makeKey($key);
+        $ret = $cache_handle->get($save_key);
+        $this->logger_handle->debug($this->logMsg('Get', $key, $ret));
+        $result_code = 0;
+        if (false === $ret) {
+            $result_code = $cache_handle->getResultCode();
+            if ($result_code > 0) {
+                $this->logResultMessage($result_code, 'Get', $key);
+                //服务器不可用，重试
+                if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
+                    return $this->retry(array($this, 'get'), func_get_args());
+                }
+            }
+        }
+        //如果ret是false 并且 result_code 不为0, 表示 false 不是缓存值，而是失败的返回值
+        if (false === $ret && $result_code > 0) {
+            $ret = $default;
+        } else {
+            $this->cache_arr[$key] = $ret;
+        }
+        return $ret;
     }
 
     /**
@@ -644,17 +676,15 @@ class Memcached extends Transaction implements CacheInterface
             }
         }
         $cache_handle = $this->getCacheHandle();
-        $ret = true;
+        $this->logger_handle->debug($this->logMsg('commit'));
         foreach ($new_arr as $ttl => $value_arr) {
             //如果有多个，批量更新
             if (count($value_arr) > 1) {
                 $ret = $cache_handle->setMulti($value_arr, $ttl);
-                $this->logger_handle->debug($this->logMsg('setMulti', 'multipleKeys', $value_arr));
             } else {
                 $key = key($value_arr);
                 $value = $value_arr[$key];
                 $ret = $cache_handle->set($key, $value, $ttl);
-                $this->logger_handle->debug($this->logMsg('setMulti', 'multipleKeys', $value_arr));
             }
             if (false === $ret) {
                 $result_code = $cache_handle->getResultCode();
@@ -751,36 +781,14 @@ class Memcached extends Transaction implements CacheInterface
      * 获取一个值，同时将它的token值存起来
      * @param string $key 缓存键名
      * @param null $default 默认值
-     * @param mixed $token token值
      * @return mixed
      */
-    public function casGet($key, $default = null, &$token = '')
-    {
-        $re = $this->doGet($key, $default, true);
-        if (isset($this->cas_token_arr[$key])) {
-            $token = $this->cas_token_arr[$key];
-        }
-        return $re;
-    }
-
-    /**
-     * 获取一个缓存.
-     * @param string $key 缓存键值
-     * @param mixed $default 如果缓存不存在，返回的默认值
-     * @param bool $need_token 是否需要token值
-     * @return mixed
-     */
-    private function doGet($key, $default, $need_token = false)
+    public function casGet($key, $default = null)
     {
         //在缓存里已经有值，如果需要token，必须事先有token值，因为通过getMultiple方法拿不到token
-        if (($need_token && isset($this->cas_token_arr[$key]))
-            || (!$need_token && isset($this->cache_arr[$key]))
-        ) {
+        if (isset($this->cas_token_arr[$key])) {
             $ret = $this->cache_arr[$key];
-            if (false === $ret) {
-                $ret = $default;
-            }
-            $this->logger_handle->debug($this->logMsg('Get', $key, $ret, 'from $this->cache_arr'));
+            $this->logger_handle->debug($this->logMsg('casGet', $key, $ret, 'from $this->cache_arr'));
             return $ret;
         }
         //系统已经不可用了
@@ -790,31 +798,31 @@ class Memcached extends Transaction implements CacheInterface
         $cache_handle = $this->getCacheHandle();
         //save_key必须在getCacheHandle之后
         $save_key = $this->makeKey($key);
-        $token = null;
-        if ($need_token) {
-            $ret = $cache_handle->get($save_key, null, $token);
-        } else {
-            $ret = $cache_handle->get($save_key);
+        //如果这个key在待存列表，立即写入
+        if (isset($this->cache_save[$key])) {
+            $tmp = $this->cache_save[$key];
+            $cache_handle->set($key, $tmp[0], $tmp[1]);
+            unset($this->cache_save[$key]);
         }
-        $this->logger_handle->debug($this->logMsg('Get', $key, $ret));
+        $ret = $cache_handle->get($save_key, null, $token);
+        $this->logger_handle->debug($this->logMsg('casGet', $key, $ret));
         $result_code = 0;
         if (false === $ret) {
             $result_code = $cache_handle->getResultCode();
             if ($result_code > 0) {
-                $this->logResultMessage($result_code, 'Get', $key);
+                $this->logResultMessage($result_code, 'casGet', $key);
                 //服务器不可用，重试
                 if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
-                    return $this->retry(array($this, 'get'), func_get_args());
+                    return $this->retry(array($this, 'casGet'), func_get_args());
                 }
             }
-        } elseif( $need_token) {
-            $this->cas_token_arr[$key] = $token;
         }
-        //缓存起来
-        $this->cache_arr[$key] = $ret;
         //如果ret是false 并且 result_code 不为0, 表示 false 不是缓存值，而是失败的返回值
         if (false === $ret && $result_code > 0) {
             $ret = $default;
+        } else {
+            $this->cache_arr[$key] = $ret;
+            $this->cas_token_arr[$key] = $token;
         }
         return $ret;
     }

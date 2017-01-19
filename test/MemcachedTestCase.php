@@ -14,6 +14,8 @@ $re = $cache->get('test');
 
 var_dump($re);
 
+$re = $cache->casGet('test', null);
+
 $re = $cache->casSet('test', 'Cas set value');
 
 var_dump($re);
