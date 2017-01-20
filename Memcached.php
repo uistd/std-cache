@@ -439,6 +439,7 @@ class Memcached extends Transaction implements CacheInterface
         if (!empty($this->cache_arr)) {
             $from_cache_arr = null;
             foreach ($keys as $i => $name) {
+                //在缓存列表
                 if (isset($this->cache_arr[$name])) {
                     $result[$name] = $this->cache_arr[$name];
                     $from_cache_arr[] = $name;
@@ -507,6 +508,7 @@ class Memcached extends Transaction implements CacheInterface
             $this->cache_arr[$name] = $value;
             $this->cache_save[$name] = array($value, $ttl);
         }
+        $this->logger_handle->debug($this->logMsg('setMultiple', array_keys($values), $values, ' commit later.'));
         return true;
     }
 
@@ -685,14 +687,15 @@ class Memcached extends Transaction implements CacheInterface
         $cache_handle = $this->getCacheHandle();
         $this->logger_handle->debug($this->logMsg('commit'));
         foreach ($new_arr as $ttl => $value_arr) {
+            $ttl_str = ' TTL: '. $ttl;
             //如果有多个，批量更新
             if (count($value_arr) > 1) {
-                $this->logger_handle->debug($this->logMsg('commit/setMulti', array_keys($value_arr), $value_arr));
+                $this->logger_handle->debug($this->logMsg('commit/setMulti', array_keys($value_arr), $value_arr, $ttl_str));
                 $ret = $cache_handle->setMulti($value_arr, $ttl);
             } else {
                 $key = key($value_arr);
                 $value = $value_arr[$key];
-                $this->logger_handle->debug($this->logMsg('commit/set', $key, $value));
+                $this->logger_handle->debug($this->logMsg('commit/set', $key, $value, $ttl_str));
                 $ret = $cache_handle->set($key, $value, $ttl);
             }
             if (false === $ret) {

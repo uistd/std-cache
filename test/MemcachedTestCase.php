@@ -56,3 +56,17 @@ $result = $cache->getMultiple(array(
 ));
 
 var_dump($result);
+
+$cache->setMultiple(
+    array(
+        'test_7' => 'test string 7',
+        'test_8' => 'test string 8',
+        'test_9' => 'test string 9',
+        'test_10' => 'test string 10',
+        'test_11' => 'test string 11'
+    ), 300
+);
+
+$cache->set('test_12', 'test string 12', 500);
+$cache->set('test_13', 'test string 13', 500);
+$cache->set('test_14', 'test string 14', 600);

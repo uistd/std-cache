@@ -137,8 +137,8 @@ class Apc extends Transaction implements CacheInterface
     {
         $ttl = $this->ttl($ttl);
         $this->cache_save[$key] = [$value, $ttl];
-        $msg = $this->logMsg('SET', $key, $value, 'to be commit');
-        $this->getLogger()->info($msg);
+        $msg = $this->logMsg('SET', $key, $value, 'commit later.');
+        $this->getLogger()->debug($msg);
         return true;
     }
 
@@ -170,7 +170,7 @@ class Apc extends Transaction implements CacheInterface
             }
         }
         $msg = $this->logMsg($get_type, $key, $re, $ext_msg);
-        $this->getLogger()->info($msg);
+        $this->getLogger()->debug($msg);
         return $re;
     }
 
@@ -244,7 +244,7 @@ class Apc extends Transaction implements CacheInterface
      */
     public function clear()
     {
-        $this->getLogger()->info($this->logMsg('CLEAR', ''));
+        $this->getLogger()->debug($this->logMsg('CLEAR', ''));
         apc_clear_cache('user');
     }
 
@@ -256,18 +256,43 @@ class Apc extends Transaction implements CacheInterface
      */
     public function getMultiple(array $keys, $default = null)
     {
-        $log_keys = join(',', $keys);
-        foreach ($keys as &$key) {
-            $key = $this->keyName($key);
-        }
-        $result = apc_fetch($keys);
-        $log_msg = $this->logMsg('GET_MULTI', $log_keys, $result);
-        $this->getLogger()->info($log_msg);
-        foreach ($result as $key => &$value) {
-            if (null === $value) {
-                $value = $default;
+        $result = array();
+        $from_cache_arr = null;
+        foreach ($keys as $i => $name) {
+            if (isset($this->cache_arr[$name])) {
+                $result[$name] = $this->cache_arr[$name];
+                unset($keys[$i]);
+                $from_cache_arr[$name];
+            }
+            if (isset($this->cache_save[$name])) {
+                $result[$name] = $this->cache_save[$name][0];
+                unset($keys[$i]);
+                $from_cache_arr[$name];
             }
         }
+        $logger = $this->getLogger();
+        if ($from_cache_arr) {
+            $log_msg = $this->logMsg('GET_MULTI', '[FROM cache]', join(',', $from_cache_arr));
+            $this->$logger->debug($log_msg);
+        }
+        //所有的数据都在缓存中了
+        if (empty($keys)) {
+            $logger->debug($this->logMsg('getMultiple final', '[all from cache]', $result));
+            return $result;
+        }
+        $log_msg = $this->logMsg('GET_MULTI', $keys);
+        $logger->debug($log_msg);
+        //从内存取数据
+        foreach ($keys as &$key) {
+            $real_key = $this->keyName($key);
+            $tmp_re = apc_fetch($real_key, $is_ok);
+            if ($is_ok) {
+                $result[$key] = $tmp_re;
+            } else {
+                $result[$key] = $default;
+            }
+        }
+        $logger->debug($this->logMsg('getMultiple final', 'multi-key', $result));
         return $result;
     }
 
@@ -279,10 +304,11 @@ class Apc extends Transaction implements CacheInterface
      */
     public function setMultiple(array $values, $ttl = null)
     {
-        $log_msg = $this->logMsg('SET_MULTI', join(',', array_keys($values)));
-        $this->getLogger()->info($log_msg);
+        $log_msg = $this->logMsg('SET_MULTI', 'multi-keys', $values);
+        $this->getLogger()->debug($log_msg);
+        $ttl = $this->ttl($ttl);
         foreach ($values as $key => $value) {
-            $this->set($key, $values);
+            $this->cache_save[$key] = [$value, $ttl];
         }
         return true;
     }
@@ -294,7 +320,7 @@ class Apc extends Transaction implements CacheInterface
      */
     public function deleteMultiple(array $keys)
     {
-        $this->getLogger()->info('APC DELETE_MULTI ' . join(',', array_keys($keys)));
+        $this->getLogger()->debug('APC DELETE_MULTI ' . join(',', array_keys($keys)));
         foreach ($keys as $key) {
             $this->delete($key);
         }
@@ -316,7 +342,7 @@ class Apc extends Transaction implements CacheInterface
                 $this->cache_arr[$key] = $re;
             }
         }
-        $this->getLogger()->info($this->logMsg('HAS', $key, $has_cache));
+        $this->getLogger()->debug($this->logMsg('HAS', $key, $has_cache));
         return $has_cache;
     }
 
@@ -336,7 +362,7 @@ class Apc extends Transaction implements CacheInterface
         if ($re) {
             $this->cache_arr[$key_name] = $value;
         }
-        $this->getLogger()->info($this->logMsg('ADD', $key, $value, $re ? 'success' : 'failed'));
+        $this->getLogger()->debug($this->logMsg('ADD', $key, $value, $re ? 'success' : 'failed'));
         return $re;
     }
 
@@ -350,7 +376,7 @@ class Apc extends Transaction implements CacheInterface
     {
         $key_name = $this->keyName($key);
         $re = apc_inc($key_name, $step);
-        $this->getLogger()->info($this->logMsg('INCREASE', $key, $re));
+        $this->getLogger()->debug($this->logMsg('INCREASE', $key, $re));
         return $re;
     }
 
@@ -364,7 +390,7 @@ class Apc extends Transaction implements CacheInterface
     {
         $key_name = $this->keyName($key);
         $re = apc_dec($key_name, $step);
-        $this->getLogger()->info($this->logMsg('DECREASE', $key, $re));
+        $this->getLogger()->debug($this->logMsg('DECREASE', $key, $re));
         return $re;
     }
 
@@ -394,7 +420,7 @@ class Apc extends Transaction implements CacheInterface
         $ttl = $this->ttl($time);
         $value = $this->get($key);
         $this->set($key, $value, $ttl);
-        $this->getLogger()->info($this->logMsg('SET_TTL', $key, $value, 'new ttl:' . $ttl));
+        $this->getLogger()->debug($this->logMsg('SET_TTL', $key, $value, 'new ttl:' . $ttl));
         return true;
     }
 
@@ -407,10 +433,13 @@ class Apc extends Transaction implements CacheInterface
         if (!$this->cache_save) {
             return;
         }
-        $this->getLogger()->info($this->logMsg('COMMIT', ''));
+        $logger = $this->getLogger();
+        $logger->debug($this->logMsg('COMMIT', ''));
         foreach ($this->cache_save as $name => $tmp) {
             $key = $this->keyName($name);
-            apc_store($key, $tmp[0], $tmp[1]);
+            $re = apc_store($key, $tmp[0], $tmp[1]);
+            $msg = $re ? 'ok' : 'fail';
+            $logger->debug($this->logMsg('commit/set', $key, $tmp[0], $msg));
         }
         $this->cache_arr = null;
     }
@@ -451,7 +480,7 @@ class Apc extends Transaction implements CacheInterface
             $str .= ' Key:' . $key;
         }
         if (null !== $val) {
-            $str .= ' Value:' . FFanDebug::varFormat($val) .' ';
+            $str .= ' Value:' . FFanDebug::varFormat($val) . ' ';
         }
         if (null !== $ext_msg) {
             $str .= FFanDebug::varFormat($ext_msg);
