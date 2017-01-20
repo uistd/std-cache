@@ -437,15 +437,22 @@ class Memcached extends Transaction implements CacheInterface
         $result = array();
         //先检查在本地数组里有没有
         if (!empty($this->cache_arr)) {
+            $from_cache_arr = null;
             foreach ($keys as $i => $name) {
                 if (isset($this->cache_arr[$name])) {
                     $result[$name] = $this->cache_arr[$name];
+                    $from_cache_arr[] = $name;
                     unset($keys[$i]);
                 }
+            }
+            if ($from_cache_arr) {
+                $log_msg = $this->logMsg('getMultiple', '[FROM $this->cache_arr]', join(',', $from_cache_arr));
+                $this->logger_handle->debug($log_msg);
             }
         }
         //已经不需要和服务器交互了，最理想的情况
         if (empty($keys)) {
+            $this->logger_handle->debug($this->logMsg('getMultiple final', '[all from cache]', $result));
             return $result;
         }//服务器已经不可用了
         elseif ($this->is_disabled) {
@@ -454,14 +461,13 @@ class Memcached extends Transaction implements CacheInterface
             }
             return $result;
         } else {
-            $cas_arr = array();
             $cache_handle = $this->getCacheHandle();
             $new_keys = array();
             foreach ($keys as $name) {
                 $new_keys[] = $this->makeKey($name);
             }
             $result_list = $cache_handle->getMulti($new_keys, $cas_arr, \Memcached::GET_PRESERVE_ORDER);
-            $this->logger_handle->info($this->logMsg('GetMultiple', $keys, $result_list));
+            $this->logger_handle->info($this->logMsg('GetMultiple from server', $new_keys, $result_list));
             if (false === $result_list) {
                 $result_code = $cache_handle->getResultCode();
                 $this->logResultMessage($result_code, 'Get', $new_keys);
@@ -484,6 +490,7 @@ class Memcached extends Transaction implements CacheInterface
                 $this->cache_arr[$name] = $value;
             }
         }
+        $this->logger_handle->debug($this->logMsg('getMultiple final', $keys, $result));
         return $result;
     }
 
@@ -680,10 +687,12 @@ class Memcached extends Transaction implements CacheInterface
         foreach ($new_arr as $ttl => $value_arr) {
             //如果有多个，批量更新
             if (count($value_arr) > 1) {
+                $this->logger_handle->debug($this->logMsg('commit/setMulti', array_keys($value_arr), $value_arr));
                 $ret = $cache_handle->setMulti($value_arr, $ttl);
             } else {
                 $key = key($value_arr);
                 $value = $value_arr[$key];
+                $this->logger_handle->debug($this->logMsg('commit/set', $key, $value));
                 $ret = $cache_handle->set($key, $value, $ttl);
             }
             if (false === $ret) {
@@ -704,7 +713,7 @@ class Memcached extends Transaction implements CacheInterface
      */
     public function rollback()
     {
-        $this->cleanup();
+        $this->cache_save = $this->cas_token_arr = null;
     }
 
     /**
@@ -713,7 +722,7 @@ class Memcached extends Transaction implements CacheInterface
      */
     public function cleanup()
     {
-        $this->cache_save = $this->cas_token_arr = null;
+        $this->cache_arr = $this->cache_save = $this->cas_token_arr = null;
     }
 
     /**
