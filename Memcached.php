@@ -553,6 +553,7 @@ class Memcached extends Transaction implements CacheInterface
         if ($this->is_disabled) {
             return false;
         }
+        $ttl = $this->ttl($ttl);
         $cache_handle = $this->getCacheHandle();
         $save_key = $this->makeKey($key);
         $ret = $cache_handle->add($save_key, $value, $ttl);
