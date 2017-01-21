@@ -550,7 +550,7 @@ class Memcached extends Transaction implements CacheInterface
             return false;
         }
         //如果服务器不可用了，直接返回false
-        if (!$this->is_disabled) {
+        if ($this->is_disabled) {
             return false;
         }
         $cache_handle = $this->getCacheHandle();
