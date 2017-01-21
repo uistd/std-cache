@@ -321,12 +321,13 @@ class Memcached extends Transaction implements CacheInterface
 
     /**
      * 当缓存服务器不可用时，自动重试
-     * @param callable $func 方法
+     * @param string $func_name 方法名
      * @param array $args
      * @return mixed
      */
-    private function retry($func, $args)
+    private function retry($func_name, $args)
     {
+        $func = array($this, $func_name);
         //如果重试后，又调用了retry函数，表示服务已经不可用了
         if ($this->is_retry_flag) {
             $this->logger_handle->error('Server down!!!');
@@ -474,7 +475,7 @@ class Memcached extends Transaction implements CacheInterface
                 $this->logResultMessage($result_code, 'Get', $new_keys);
                 //服务器已经不可用
                 if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
-                    return $this->retry(array($this, 'getMultiple'), func_get_args());
+                    return $this->retry('getMultiple', func_get_args());
                 }
                 $result_list = array();
             }
@@ -826,7 +827,7 @@ class Memcached extends Transaction implements CacheInterface
                 $this->logResultMessage($result_code, 'casGet', $key);
                 //服务器不可用，重试
                 if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
-                    return $this->retry(array($this, 'casGet'), func_get_args());
+                    return $this->retry('casGet', func_get_args());
                 }
             }
         }
@@ -870,7 +871,7 @@ class Memcached extends Transaction implements CacheInterface
             $this->logResultMessage($result_code, 'CasSet', $key);
             //服务器不可用，重试
             if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
-                return $this->retry(array($this, 'casSet'), func_get_args());
+                return $this->retry('casSet', func_get_args());
             }
         } else {
             unset($this->cas_token_arr[$key], $this->cache_save[$key]);
