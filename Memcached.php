@@ -127,15 +127,6 @@ class Memcached extends Transaction implements CacheInterface
     }
 
     /**
-     * 析构
-     */
-    public function __destruct()
-    {
-        parent::__destruct();
-        $this->cleanup();
-    }
-
-    /**
      * 初始化
      */
     private function init()

@@ -64,15 +64,6 @@ class Apc extends Transaction implements CacheInterface
     }
 
     /**
-     * 析构
-     */
-    public function __destruct()
-    {
-        parent::__destruct();
-        $this->cleanup();
-    }
-
-    /**
      * 生成缓存key
      * @param string $key
      * @return string
