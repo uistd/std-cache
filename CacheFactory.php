@@ -41,7 +41,7 @@ class CacheFactory extends FFanFactory
      * 默认的缓存类
      * @param string $config_name
      * @param array $conf_arr
-     * @return Memcached
+     * @return CacheInterface
      */
     protected static function defaultInstance($config_name, $conf_arr)
     {
