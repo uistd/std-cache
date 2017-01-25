@@ -31,7 +31,7 @@ interface CacheInterface
      * @return mixed
      */
     public function casGet($key, $default = null);
-    
+
     /**
      * 先比较cas，再做缓存更新（如果未找到cas值，将更新失败）
      * @param string $key 缓存键名

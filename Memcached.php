@@ -680,7 +680,7 @@ class Memcached extends Transaction implements CacheInterface
         $cache_handle = $this->getCacheHandle();
         $this->logger_handle->debug($this->logMsg('commit'));
         foreach ($new_arr as $ttl => $value_arr) {
-            $ttl_str = ' TTL: '. $ttl;
+            $ttl_str = ' TTL: ' . $ttl;
             //如果有多个，批量更新
             if (count($value_arr) > 1) {
                 $this->logger_handle->debug($this->logMsg('commit/setMulti', array_keys($value_arr), $value_arr, $ttl_str));
