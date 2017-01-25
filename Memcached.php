@@ -700,7 +700,7 @@ class Memcached extends Transaction implements CacheInterface
                 }
             }
         }
-        $this->cleanup();
+        $this->cache_save = null;
     }
 
     /**

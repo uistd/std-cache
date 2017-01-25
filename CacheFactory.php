@@ -20,6 +20,7 @@ class CacheFactory extends FFanFactory
      */
     protected static $class_alias = array(
         'apc' => 'ffan\php\cache\Apc',
+        'file' => 'ffan\php\cache\FileCache'
     );
 
     /**
@@ -45,8 +46,8 @@ class CacheFactory extends FFanFactory
      */
     protected static function defaultInstance($config_name, $conf_arr)
     {
-        if ('apc' === $config_name) {
-            return new Apc($config_name, $conf_arr);
+        if (isset(self::$class_alias[$config_name])) {
+            return new self::$class_alias[$config_name]($config_name, $conf_arr);
         } else {
             return new Memcached($config_name, $conf_arr);
         }

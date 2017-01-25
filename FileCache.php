@@ -3,6 +3,7 @@ namespace ffan\php\cache;
 
 use ffan\php\utils\Transaction;
 use ffan\php\utils\Utils as FFanUtils;
+use ffan\php\utils\Env as FFanEnv;
 
 /**
  * Class FileCache 文件缓存
@@ -78,7 +79,7 @@ class FileCache extends Transaction implements CacheInterface
             return $default;
         }
         /** @noinspection PhpIncludeInspection */
-        $tmp_arr = include($file_name);
+        $tmp_arr = require($file_name);
         //如果不是数组，或者不存在expire_key或者 value_key
         if (!is_array($tmp_arr) || !isset($tmp_arr[self::EXPIRE_KEY], $tmp_arr[self::VALUE_KEY])) {
             return $default;
@@ -101,13 +102,13 @@ class FileCache extends Transaction implements CacheInterface
     private function makeFileName($key)
     {
         //如果key名不满足文件命名，就md5它
-        if (!preg_match('/^[a-zA-Z_][a-zA-Z_0-9]*$/', $key)) {
+        if (strlen($key) > 32 || !preg_match('/^[a-zA-Z_][a-zA-Z_0-9.]*$/', $key)) {
             $key = md5($key);
         }
         if (null === $this->file_path) {
             $this->init();
         }
-        return $this->file_path . $key . '.php';
+        return $this->file_path . self::FILE_PREFIX . $key . '.php';
     }
 
     /**
@@ -115,10 +116,9 @@ class FileCache extends Transaction implements CacheInterface
      */
     private function init()
     {
-        $base_path = defined('FFAN_BASE') ? FFAN_BASE : str_replace('vendor/ffan/php/cache', '', __DIR__);
         $base_dir = isset($conf_arr['cache_dir']) ? trim($conf_arr['cache_dir']) : 'file_cache';
-        if (!DIRECTORY_SEPARATOR === $base_dir[0]) {
-            $base_dir = FFanUtils::joinPath($base_path, $base_dir);
+        if (DIRECTORY_SEPARATOR !== $base_dir[0]) {
+            $base_dir = FFanUtils::joinPath(FFanEnv::getRuntimePath(), $base_dir);
         }
         $this->file_path = $base_dir;
         //是否有可写权限
@@ -192,7 +192,7 @@ class FileCache extends Transaction implements CacheInterface
         if (!is_file($file_name)) {
             return true;
         }
-        return false !== file_put_contents($file_name, '');
+        return unlink($file_name);
     }
 
     /**
@@ -291,19 +291,16 @@ class FileCache extends Transaction implements CacheInterface
      */
     public function add($key, $value, $ttl = null)
     {
-        $file = $this->makeFileName($key);
-        //如果已经存在了
-        if (is_file($file)) {
+        if ($this->has($key)) {
             return false;
         }
-        //文件已经存在
-        $file_handle = fopen($file, 'x+');
+        $file_name = $this->makeFileName($key);
+        $ttl = $this->ttl($ttl);
+        $file_handle = fopen($file_name, 'a+');
         if (!$file_handle) {
             return false;
         }
-        $ttl = $this->ttl($ttl);
-        $content = $this->writeFile($file_handle, $value, $ttl);
-        return fwrite($file_handle, $content);
+        return $this->writeFile($file_handle, $value, $ttl);
     }
 
     /**
@@ -319,7 +316,7 @@ class FileCache extends Transaction implements CacheInterface
             self::EXPIRE_KEY => time() + $ttl,
             self::VALUE_KEY => $value,
         );
-        $content = "<?php\n return " . var_export($arr, true) . ';';
+        $content = '<?php' . PHP_EOL . 'return ' . var_export($arr, true) . ';';
         if (!flock($file_handle, LOCK_EX)) {
             fclose($file_handle);
             return false;
@@ -399,6 +396,7 @@ class FileCache extends Transaction implements CacheInterface
             $file_handle = fopen($file, 'a+');
             $this->writeFile($file_handle, $tmp[0], $tmp[1]);
         }
+        $this->cache_save = null;
     }
 
     /**
