@@ -12,13 +12,16 @@ class FileCache extends Transaction implements CacheInterface
 {
     /** 判断是否过期的key */
     const EXPIRE_KEY = '__expire__';
-     
+
     /** 缓存值的key */
     const VALUE_KEY = '__value__';
-    
+
     /** 用于检验的token */
     const CAS_KEY = '__token__';
-    
+
+    /** 文件名前缀 */
+    const FILE_PREFIX = '_tmp_';
+
     /**
      * @var array 已经打开的缓存
      */
@@ -38,7 +41,7 @@ class FileCache extends Transaction implements CacheInterface
      * @var int 默认的过期时间
      */
     private $default_ttl;
-    
+
     /**
      * FileCache constructor.
      * @param string $config_name 配置名称
@@ -95,14 +98,16 @@ class FileCache extends Transaction implements CacheInterface
      * @param string $key
      * @return string
      */
-    private function makeFileName($key){
+    private function makeFileName($key)
+    {
+        //如果key名不满足文件命名，就md5它
         if (!preg_match('/^[a-zA-Z_][a-zA-Z_0-9]*$/', $key)) {
             $key = md5($key);
         }
         if (null === $this->file_path) {
             $this->init();
         }
-        return $this->file_path . $key .'.php';
+        return $this->file_path . $key . '.php';
     }
 
     /**
@@ -136,7 +141,7 @@ class FileCache extends Transaction implements CacheInterface
         }
         return $ttl;
     }
-    
+
     /**
      * 设置一个缓存
      * @param string $key 缓存键名
@@ -158,7 +163,8 @@ class FileCache extends Transaction implements CacheInterface
      */
     public function casGet($key, $default = null)
     {
-        // TODO: Implement casGet() method.
+        trigger_error('FileCache do not support `casGet` method');
+        return false;
     }
 
     /**
@@ -170,7 +176,8 @@ class FileCache extends Transaction implements CacheInterface
      */
     public function casSet($key, $value, $ttl = null)
     {
-        // TODO: Implement casSet() method.
+        trigger_error('FileCache do not support `casSet` method');
+        return false;
     }
 
     /**
@@ -180,7 +187,12 @@ class FileCache extends Transaction implements CacheInterface
      */
     public function delete($key)
     {
-        // TODO: Implement delete() method.
+        unset($this->cache_arr[$key], $this->cache_save[$key]);
+        $file_name = $this->makeFileName($key);
+        if (!is_file($file_name)) {
+            return true;
+        }
+        return false !== file_put_contents($file_name, '');
     }
 
     /**
@@ -189,7 +201,29 @@ class FileCache extends Transaction implements CacheInterface
      */
     public function clear()
     {
-        // TODO: Implement clear() method.
+        if (null === $this->file_path) {
+            $this->init();
+        }
+        $handle = opendir($this->file_path);
+        if (!$handle) {
+            return false;
+        }
+        while (false !== ($item = readdir($handle))) {
+            //如果不是以 FILE_PREFIX 开始的，不处理
+            if (0 !== strpos($item, self::FILE_PREFIX)) {
+                continue;
+            }
+            $file = $this->file_path . $item;
+            if (is_dir($file)) {
+                continue;
+            }
+            //删除失败，可能没有权限
+            if (!unlink($file)) {
+                return false;
+            }
+        }
+        closedir($handle);
+        return true;
     }
 
     /**
@@ -200,7 +234,11 @@ class FileCache extends Transaction implements CacheInterface
      */
     public function getMultiple(array $keys, $default = null)
     {
-        // TODO: Implement getMultiple() method.
+        $result = array();
+        foreach ($keys as $key) {
+            $result[$key] = $this->get($key, $default);
+        }
+        return $result;
     }
 
     /**
@@ -211,7 +249,10 @@ class FileCache extends Transaction implements CacheInterface
      */
     public function setMultiple(array $values, $ttl = null)
     {
-        // TODO: Implement setMultiple() method.
+        foreach ($values as $key => $value) {
+            $this->set($key, $values, $ttl);
+        }
+        return true;
     }
 
     /**
@@ -221,7 +262,14 @@ class FileCache extends Transaction implements CacheInterface
      */
     public function deleteMultiple(array $keys)
     {
-        // TODO: Implement deleteMultiple() method.
+        $result = true;
+        foreach ($keys as $key) {
+            $re = $this->delete($key);
+            if (false === $re) {
+                $result = false;
+            }
+        }
+        return $result;
     }
 
     /**
@@ -231,7 +279,7 @@ class FileCache extends Transaction implements CacheInterface
      */
     public function has($key)
     {
-        // TODO: Implement has() method.
+        return null !== $this->get($key, null);
     }
 
     /**
@@ -243,7 +291,47 @@ class FileCache extends Transaction implements CacheInterface
      */
     public function add($key, $value, $ttl = null)
     {
-        // TODO: Implement add() method.
+        $file = $this->makeFileName($key);
+        //如果已经存在了
+        if (is_file($file)) {
+            return false;
+        }
+        //文件已经存在
+        $file_handle = fopen($file, 'x+');
+        if (!$file_handle) {
+            return false;
+        }
+        $ttl = $this->ttl($ttl);
+        $content = $this->writeFile($file_handle, $value, $ttl);
+        return fwrite($file_handle, $content);
+    }
+
+    /**
+     * 生成内容
+     * @param resource $file_handle
+     * @param mixed $value 值
+     * @param int $ttl 有效时间
+     * @return bool
+     */
+    private function writeFile($file_handle, $value, $ttl)
+    {
+        $arr = array(
+            self::EXPIRE_KEY => time() + $ttl,
+            self::VALUE_KEY => $value,
+        );
+        $content = "<?php\n return " . var_export($arr, true) . ';';
+        if (!flock($file_handle, LOCK_EX)) {
+            fclose($file_handle);
+            return false;
+        }
+        //清空内容
+        ftruncate($file_handle, 0);
+        //重置文件指针位置
+        rewind($file_handle);
+        $re = fwrite($file_handle, $content);
+        flock($file_handle, LOCK_UN);
+        fclose($file_handle);
+        return false !== $re;
     }
 
     /**
@@ -254,7 +342,8 @@ class FileCache extends Transaction implements CacheInterface
      */
     public function increase($key, $step = 1)
     {
-        // TODO: Implement increase() method.
+        trigger_error('FileCache do not support `increase` method');
+        return false;
     }
 
     /**
@@ -265,7 +354,8 @@ class FileCache extends Transaction implements CacheInterface
      */
     public function decrease($key, $step = 1)
     {
-        // TODO: Implement decrease() method.
+        trigger_error('FileCache do not support `decrease` method');
+        return false;
     }
 
     /**
@@ -276,7 +366,10 @@ class FileCache extends Transaction implements CacheInterface
      */
     public function expiresAt($key, $time)
     {
-        // TODO: Implement expiresAt() method.
+        if (!$this->has($key)) {
+            return false;
+        }
+        return $this->set($key, $this->get($key), $time - time());
     }
 
     /**
@@ -287,6 +380,32 @@ class FileCache extends Transaction implements CacheInterface
      */
     public function expiresAfter($key, $time)
     {
-        // TODO: Implement expiresAfter() method.
+        if (!$this->has($key)) {
+            return false;
+        }
+        return $this->set($key, $this->get($key), $time);
+    }
+
+    /**
+     * 写入缓存
+     */
+    public function commit()
+    {
+        if (empty($this->cache_save)) {
+            return;
+        }
+        foreach ($this->cache_save as $key => $tmp) {
+            $file = $this->makeFileName($key);
+            $file_handle = fopen($file, 'a+');
+            $this->writeFile($file_handle, $tmp[0], $tmp[1]);
+        }
+    }
+
+    /**
+     * 回滚
+     */
+    public function rollback()
+    {
+        $this->cache_save = null;
     }
 }
