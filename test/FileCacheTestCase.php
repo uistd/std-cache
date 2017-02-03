@@ -33,3 +33,7 @@ var_dump($re);
 
 print_r($cache->get($key_name, 'not found'));
 echo PHP_EOL;
+
+var_dump($cache->get('test_expire'));
+
+$cache->set('test_expire', 'This is never expire string', 0);

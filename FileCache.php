@@ -86,7 +86,7 @@ class FileCache extends Transaction implements CacheInterface
         }
         $exp = (int)$tmp_arr[self::EXPIRE_KEY];
         //过期了
-        if ($exp < time()) {
+        if (0 !== $exp && $exp < time()) {
             return $default;
         }
         $value = $tmp_arr[self::VALUE_KEY];
@@ -313,9 +313,14 @@ class FileCache extends Transaction implements CacheInterface
     private function writeFile($file_handle, $value, $ttl)
     {
         $arr = array(
-            self::EXPIRE_KEY => time() + $ttl,
             self::VALUE_KEY => $value,
         );
+        if ($ttl > 0) {
+            $arr[self::EXPIRE_KEY] = $ttl + time();
+        } else {
+            //0表示不过期
+            $arr[self::EXPIRE_KEY] = 0;
+        }
         $content = '<?php' . PHP_EOL . 'return ' . var_export($arr, true) . ';';
         if (!flock($file_handle, LOCK_EX)) {
             fclose($file_handle);
