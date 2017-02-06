@@ -205,7 +205,6 @@ class Apc extends Transaction implements CacheInterface
             $this->cache_arr[$key] = $tmp[0];
         }
         $old_value = $this->cache_arr[$key];
-        var_dump($old_value);
         if (!is_int($old_value)) {
             return false;
         }
