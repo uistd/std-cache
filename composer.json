@@ -1,5 +1,5 @@
 {
-  "name": "ffan/php/cache",
+  "name": "ffan/php-cache",
   "description": "FFan cache",
   "keywords": [
     "ffan",
@@ -16,9 +16,9 @@
   ],
   "require": {
     "php": ">=5.5.0",
-    "ffan/php/event": "*",
-    "ffan/php/utils": "*",
-    "ffan/php/logger": "*"
+    "ffan/php-event": "*",
+    "ffan/php-utils": "*",
+    "ffan/php-logger": "*"
   },
   "autoload": {
     "psr-4": {
