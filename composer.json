@@ -17,7 +17,7 @@
   "require": {
     "php": ">=5.5.0",
     "ffan/php-event": "*",
-    "ffan/php-utils": "*",
+    "ffan/php-utils": "1.0.*",
     "ffan/php-logger": "*"
   },
   "autoload": {
