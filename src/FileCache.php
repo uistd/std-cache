@@ -1,13 +1,13 @@
 <?php
-namespace ffan\php\cache;
+namespace FFan\Std\Cache;
 
-use ffan\php\utils\Transaction;
-use ffan\php\utils\Utils as FFanUtils;
-use ffan\php\utils\Env as FFanEnv;
+use FFan\Std\Event\Transaction;
+use FFan\Std\Common\Utils as FFanUtils;
+use FFan\Std\Common\Env as FFanEnv;
 
 /**
  * Class FileCache 文件缓存
- * @package ffan\php\cache
+ * @package FFan\Std\Cache
  */
 class FileCache extends Transaction implements CacheInterface
 {
@@ -153,6 +153,7 @@ class FileCache extends Transaction implements CacheInterface
     {
         $ttl = $this->ttl($ttl);
         $this->cache_save[$key] = array($value, $ttl);
+        return true;
     }
 
     /**

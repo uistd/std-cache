@@ -1,9 +1,9 @@
 <?php
-namespace ffan\php\cache;
+namespace FFan\Std\Cache;
 
 /**
  * Interface CatchInterface simpleCache改良接口
- * @package ffan\php\cache
+ * @package FFan\Std\Cache
  */
 interface CacheInterface
 {

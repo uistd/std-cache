@@ -1,15 +1,15 @@
 <?php
-namespace ffan\php\cache;
+namespace FFan\Std\Cache;
 
-use ffan\php\logger\LoggerFactory;
-use ffan\php\utils\Debug as FFanDebug;
-use ffan\php\utils\InvalidConfigException;
-use ffan\php\utils\Transaction;
-use Psr\log\LoggerInterface;
+use FFan\Std\Console\Debug as FFanDebug;
+use FFan\Std\Common\InvalidConfigException;
+use FFan\Std\Event\Transaction;
+use FFan\Std\Logger\LogHelper;
+use FFan\Std\Logger\LogRouter;
 
 /**
  * Class Memcached
- * @package ffan\php\cache
+ * @package FFan\Std\Cache
  */
 class Memcached extends Transaction implements CacheInterface
 {
@@ -89,7 +89,7 @@ class Memcached extends Transaction implements CacheInterface
     private $is_init = false;
 
     /**
-     * @var LoggerInterface 日志
+     * @var LogRouter 日志
      */
     private $logger_handle;
 
@@ -150,12 +150,7 @@ class Memcached extends Transaction implements CacheInterface
                 $this->default_ttl = $default_ttl;
             }
         }
-        //如果指定了日志对象
-        if (isset($conf_arr['logger_name'])) {
-            $this->logger_handle = LoggerFactory::get($conf_arr['logger_name']);
-        } else {
-            $this->logger_handle = LoggerFactory::get();
-        }
+        $this->logger_handle = LogHelper::getLogRouter();
         $this->connect();
     }
 
@@ -297,7 +292,7 @@ class Memcached extends Transaction implements CacheInterface
                 $this->logResultMessage($result_code, 'Get', $key);
                 //服务器不可用，重试
                 if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
-                    return $this->retry(array($this, 'get'), func_get_args());
+                    return $this->retry('get', func_get_args());
                 }
             }
         }
@@ -389,7 +384,7 @@ class Memcached extends Transaction implements CacheInterface
             $result_code = $cache_handle->getResultCode();
             $this->logResultMessage($result_code, 'Delete', $key);
             if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
-                return $this->retry('remove', $key);
+                return $this->retry('remove', array($key));
             }
         }
         return $ret;

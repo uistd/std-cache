@@ -1,14 +1,15 @@
 <?php
-namespace ffan\php\cache;
 
-use ffan\php\logger\LoggerFactory;
-use ffan\php\utils\Transaction;
-use Psr\Log\LoggerInterface;
-use ffan\php\utils\Debug as FFanDebug;
+namespace FFan\Std\Cache;
+
+use FFan\Std\Event\Transaction;
+use FFan\Std\Console\Debug as FFanDebug;
+use FFan\Std\Logger\LogHelper;
+use FFan\Std\Logger\LogRouter;
 
 /**
  * Class Apc
- * @package ffan\php\cache
+ * @package FFan\Std\Cache
  */
 class Apc extends Transaction implements CacheInterface
 {
@@ -43,11 +44,6 @@ class Apc extends Transaction implements CacheInterface
     private $default_ttl;
 
     /**
-     * @var LoggerInterface 日志对象
-     */
-    private $logger;
-
-    /**
      * Memcached constructor.
      * @param $config_name
      * @param array $config_set
@@ -75,18 +71,11 @@ class Apc extends Transaction implements CacheInterface
 
     /**
      * 获取日志对象
-     * @return LoggerInterface
+     * @return LogRouter
      */
     private function getLogger()
     {
-        if (null === $this->logger) {
-            if (isset($this->config_set['logger_name'])) {
-                $this->logger = LoggerFactory::get($this->config_set['logger_name']);
-            } else {
-                $this->logger = LoggerFactory::get();
-            }
-        }
-        return $this->logger;
+        return LogHelper::getLogRouter();
     }
 
     /**
@@ -226,6 +215,7 @@ class Apc extends Transaction implements CacheInterface
         $key_name = $this->keyName($key);
         unset($this->cache_save[$key], $this->cache_arr[$key]);
         apc_delete($key_name);
+        return true;
     }
 
     /**
@@ -236,6 +226,7 @@ class Apc extends Transaction implements CacheInterface
     {
         $this->getLogger()->debug($this->logMsg('CLEAR', ''));
         apc_clear_cache('user');
+        return true;
     }
 
     /**
@@ -270,7 +261,7 @@ class Apc extends Transaction implements CacheInterface
             $logger->debug($this->logMsg('getMultiple final', '[all from cache]', $result));
             return $result;
         }
-        $log_msg = $this->logMsg('GET_MULTI', $keys);
+        $log_msg = $this->logMsg('GET_MULTI', join(',', $keys));
         $logger->debug($log_msg);
         //从内存取数据
         foreach ($keys as &$key) {
@@ -455,7 +446,7 @@ class Apc extends Transaction implements CacheInterface
     /**
      * 日志消息
      * @param string $action 操作类型
-     * @param string $key 键名
+     * @param string|array $key 键名
      * @param mixed $val 值
      * @param null|string $ext_msg 附加消息
      * @return string
@@ -464,9 +455,6 @@ class Apc extends Transaction implements CacheInterface
     {
         $str = '[Apc ' . $this->conf_name . ']' . $action;
         if (!empty($key)) {
-            if (is_array($key)) {
-                $key = join(',', $key);
-            }
             $str .= ' Key:' . $key;
         }
         if (null !== $val) {

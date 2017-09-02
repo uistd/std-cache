@@ -1,12 +1,12 @@
 <?php
-namespace ffan\php\cache;
+namespace FFan\Std\Cache;
 
-use ffan\php\utils\Factory as FFanFactory;
-use ffan\php\utils\InvalidConfigException;
+use FFan\Std\Common\Factory as FFanFactory;
+use FFan\Std\Common\InvalidConfigException;
 
 /**
  * Class CacheFactory
- * @package ffan\php\cache
+ * @package FFan\Std\Cache
  */
 class CacheFactory extends FFanFactory
 {
@@ -19,8 +19,8 @@ class CacheFactory extends FFanFactory
      * @var array 别名
      */
     protected static $class_alias = array(
-        'apc' => 'ffan\php\cache\Apc',
-        'file' => 'ffan\php\cache\FileCache'
+        'apc' => 'FFan\Std\Cache\Apc',
+        'file' => 'FFan\Std\Cache\FileCache'
     );
 
     /**

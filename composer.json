@@ -1,9 +1,9 @@
 {
-  "name": "ffan/php-cache",
+  "name": "ffan/std-cache",
   "description": "FFan cache",
   "keywords": [
     "ffan",
-    "php",
+    "std",
     "cache"
   ],
   "type": "composer",
@@ -16,13 +16,14 @@
   ],
   "require": {
     "php": ">=5.5.0",
-    "ffan/php-event": "*",
-    "ffan/std-common": "1.0.*",
-    "ffan/php-logger": "*"
+    "ffan/std-event": "2.*",
+    "ffan/std-common": "2.*",
+    "ffan/std-logger": "1.*",
+    "ffan/std-console": "1.*"
   },
   "autoload": {
     "psr-4": {
-      "ffan\\php\\cache\\": ""
+      "FFan\\Std\\Cache\\": "src"
     }
   },
   "minimum-stability": "dev",
