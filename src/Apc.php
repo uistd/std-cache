@@ -2,8 +2,8 @@
 
 namespace FFan\Std\Cache;
 
-use FFan\Std\Event\Transaction;
-use FFan\Std\Console\Debug as FFanDebug;
+use FFan\Std\Common\Env;
+use FFan\Std\Console\Debug;
 use FFan\Std\Logger\LogHelper;
 use FFan\Std\Logger\LogRouter;
 
@@ -11,32 +11,12 @@ use FFan\Std\Logger\LogRouter;
  * Class Apc
  * @package FFan\Std\Cache
  */
-class Apc extends Transaction implements CacheInterface
+class Apc implements CacheInterface
 {
-    /**
-     * @var array 已经获取过的缓存
-     */
-    private $cache_arr;
-
-    /**
-     * @var array 待保存的缓存
-     */
-    private $cache_save;
-
-    /**
-     * @var string key分组
-     */
-    private $category;
-
     /**
      * @var string 配置名
      */
     private $conf_name;
-
-    /**
-     * @var array 配置项
-     */
-    private $config_set;
 
     /**
      * @var int 默认的过期时间
@@ -44,19 +24,37 @@ class Apc extends Transaction implements CacheInterface
     private $default_ttl;
 
     /**
+     * @var LogRouter
+     */
+    private $logger;
+
+    /**
+     * @var bool 是否调试模式
+     */
+    private $is_debug = false;
+
+    /**
+     * @var array 值列表 用于cas 校验
+     */
+    private $apc_value_arr;
+
+    /**
+     * @var self[]
+     */
+    private static $instance_arr;
+
+    /**
      * Memcached constructor.
      * @param $config_name
-     * @param array $config_set
      */
-    public function __construct($config_name, array $config_set)
+    public function __construct($config_name)
     {
-        parent::__construct();
-        if (!function_exists('apc_add')) {
+        if (!extension_loaded('apc')) {
             throw new \RuntimeException('Apc(u) extension needed!');
         }
+        $this->logger = LogHelper::getLogRouter();
         $this->conf_name = $config_name;
-        $this->config_set = $config_set;
-        $this->category = isset($config_set['category']) ? $config_set['category'] : $config_name;
+        $this->is_debug = Env::isDev() || Env::isSit();
     }
 
     /**
@@ -66,16 +64,7 @@ class Apc extends Transaction implements CacheInterface
      */
     private function keyName($key)
     {
-        return $this->category . '_' . $key;
-    }
-
-    /**
-     * 获取日志对象
-     * @return LogRouter
-     */
-    private function getLogger()
-    {
-        return LogHelper::getLogRouter();
+        return $this->conf_name . '_' . $key;
     }
 
     /**
@@ -103,7 +92,13 @@ class Apc extends Transaction implements CacheInterface
      */
     public function get($key, $default = null)
     {
-        return $this->doGet($key, $default);
+        $real_key = $this->keyName($key);
+        $re = apc_fetch($real_key, $is_ok);
+        $this->logMsg('get', $key, $is_ok, $re);
+        if (false === $is_ok) {
+            return $default;
+        }
+        return $re;
     }
 
     /**
@@ -116,42 +111,12 @@ class Apc extends Transaction implements CacheInterface
     public function set($key, $value, $ttl = null)
     {
         $ttl = $this->ttl($ttl);
-        $this->cache_save[$key] = [$value, $ttl];
-        $msg = $this->logMsg('SET', $key, $value, 'commit later.');
-        $this->getLogger()->debug($msg);
+        $real_key = $this->keyName($key);
+        $re = apc_store($real_key, $value, $ttl);
+        $this->logMsg('set', $key, $re, $value);
+        //使用  set 方法更新后, 要把apc_value_arr[$key]清理, 之后就不能再用cas_set更新了
+        unset($this->apc_value_arr[$key]);
         return true;
-    }
-
-    /**
-     * 获取一个缓存.
-     * @param string $key 缓存键值
-     * @param mixed $default 如果缓存不存在，返回的默认值
-     * @param string $get_type 获取方式
-     * @return mixed
-     */
-    private function doGet($key, $default = null, $get_type = 'GET')
-    {
-        //已经获取过了
-        if (isset($this->cache_arr[$key])) {
-            $ext_msg = 'from $this->cache_arr';
-            $re = $this->cache_arr[$key];
-        } //还未写入的
-        elseif (isset($this->cache_save[$key])) {
-            $ext_msg = 'from $this->cache_save';
-            $re = $this->cache_save[$key][0];
-        } else {
-            $re = apc_fetch($key, $is_ok);
-            if (!$is_ok) {
-                $ext_msg = 'Not exist';
-                $re = $default;
-            } else {
-                $ext_msg = 'from APC';
-                $this->cache_arr[$key] = $re;
-            }
-        }
-        $msg = $this->logMsg($get_type, $key, $re, $ext_msg);
-        $this->getLogger()->debug($msg);
-        return $re;
     }
 
     /**
@@ -162,9 +127,19 @@ class Apc extends Transaction implements CacheInterface
      */
     public function casGet($key, $default = null)
     {
-        $re = $this->doGet($key, $default, 'CAS_GET');
-        if (!is_int($re)) {
-            $this->getLogger()->warning('CAS_GET ' . $key . ' value must be int');
+        //如果有本地缓存了,直接返回本地的
+        if (isset($this->apc_value_arr[$key])) {
+            $re = $this->apc_value_arr[$key];
+            $this->logMsg('cas_get_from_local_var', $key, true, $re);
+        } else {
+            $real_key = $this->keyName($key);
+            $re = apc_fetch($real_key, $is_ok);
+            $this->logMsg('cas_get', $key, $is_ok, $re);
+            if ($is_ok) {
+                $this->apc_value_arr[$key] = $re;
+            } else {
+                $re = $default;
+            }
         }
         return $re;
     }
@@ -178,30 +153,17 @@ class Apc extends Transaction implements CacheInterface
      */
     public function casSet($key, $value, $ttl = null)
     {
-        //必须先获取一次，或者 set一次
-        if (!isset($this->cache_arr[$key]) && !isset($this->cache_save[$key])) {
-            $this->getLogger()->warning('CAS_SET ' . $key . ' must get old value first!');
+        //必须使用casGet之后, 才能调用casSet
+        if (!isset($this->apc_value_arr[$key])) {
             return false;
         }
-        if (!is_int($value)) {
-            throw new \InvalidArgumentException('Apc casSet value must be int');
-        }
-        //如果该缓存还没有正式写入
-        if (isset($this->cache_save[$key])) {
-            $tmp = $this->cache_save[$key];
-            apc_store($this->keyName($key), $tmp[0], $tmp[1]);
-            unset($this->cache_save[$key]);
-            $this->cache_arr[$key] = $tmp[0];
-        }
-        $old_value = $this->cache_arr[$key];
-        if (!is_int($old_value)) {
-            return false;
-        }
-        $save_key = $this->keyName($key);
-        $re = apc_cas($save_key, $old_value, $value);
+        $real_key = $this->keyName($key);
+        $old_value = $this->apc_value_arr[$key];
+        $re = apc_cas($real_key, $old_value, $value);
         if ($re) {
-            $this->cache_arr[$key] = $value;
+            $this->apc_value_arr[$key] = $value;
         }
+        $this->logMsg('cas_set', $key, $re, $value);
         return $re;
     }
 
@@ -212,9 +174,10 @@ class Apc extends Transaction implements CacheInterface
      */
     public function delete($key)
     {
-        $key_name = $this->keyName($key);
-        unset($this->cache_save[$key], $this->cache_arr[$key]);
-        apc_delete($key_name);
+        unset($this->apc_value_arr[$key]);
+        $real_key = $this->keyName($key);
+        $re = apc_delete($real_key);
+        $this->logMsg('delete', $key, $re);
         return true;
     }
 
@@ -224,8 +187,8 @@ class Apc extends Transaction implements CacheInterface
      */
     public function clear()
     {
-        $this->getLogger()->debug($this->logMsg('CLEAR', ''));
-        apc_clear_cache('user');
+        $re = apc_clear_cache('user');
+        $this->logMsg('clear', 'all_keys', $re);
         return true;
     }
 
@@ -237,44 +200,8 @@ class Apc extends Transaction implements CacheInterface
      */
     public function getMultiple(array $keys, $default = null)
     {
-        $result = array();
-        $from_cache_arr = null;
-        foreach ($keys as $i => $name) {
-            if (isset($this->cache_arr[$name])) {
-                $result[$name] = $this->cache_arr[$name];
-                unset($keys[$i]);
-                $from_cache_arr[$name];
-            }
-            if (isset($this->cache_save[$name])) {
-                $result[$name] = $this->cache_save[$name][0];
-                unset($keys[$i]);
-                $from_cache_arr[$name];
-            }
-        }
-        $logger = $this->getLogger();
-        if ($from_cache_arr) {
-            $log_msg = $this->logMsg('GET_MULTI', '[FROM cache]', join(',', $from_cache_arr));
-            $this->$logger->debug($log_msg);
-        }
-        //所有的数据都在缓存中了
-        if (empty($keys)) {
-            $logger->debug($this->logMsg('getMultiple final', '[all from cache]', $result));
-            return $result;
-        }
-        $log_msg = $this->logMsg('GET_MULTI', join(',', $keys));
-        $logger->debug($log_msg);
-        //从内存取数据
-        foreach ($keys as &$key) {
-            $real_key = $this->keyName($key);
-            $tmp_re = apc_fetch($real_key, $is_ok);
-            if ($is_ok) {
-                $result[$key] = $tmp_re;
-            } else {
-                $result[$key] = $default;
-            }
-        }
-        $logger->debug($this->logMsg('getMultiple final', 'multi-key', $result));
-        return $result;
+        //todo
+        return array();
     }
 
     /**
@@ -285,12 +212,7 @@ class Apc extends Transaction implements CacheInterface
      */
     public function setMultiple(array $values, $ttl = null)
     {
-        $log_msg = $this->logMsg('SET_MULTI', 'multi-keys', $values);
-        $this->getLogger()->debug($log_msg);
-        $ttl = $this->ttl($ttl);
-        foreach ($values as $key => $value) {
-            $this->cache_save[$key] = [$value, $ttl];
-        }
+        //todo
         return true;
     }
 
@@ -301,10 +223,7 @@ class Apc extends Transaction implements CacheInterface
      */
     public function deleteMultiple(array $keys)
     {
-        $this->getLogger()->debug('APC DELETE_MULTI ' . join(',', array_keys($keys)));
-        foreach ($keys as $key) {
-            $this->delete($key);
-        }
+        //todo
         return true;
     }
 
@@ -315,16 +234,10 @@ class Apc extends Transaction implements CacheInterface
      */
     public function has($key)
     {
-        if (isset($this->cache_save[$key]) || isset($this->cache_arr[$key])) {
-            $has_cache = true;
-        } else {
-            $re = apc_fetch($this->keyName($key), $has_cache);
-            if ($has_cache) {
-                $this->cache_arr[$key] = $re;
-            }
-        }
-        $this->getLogger()->debug($this->logMsg('HAS', $key, $has_cache));
-        return $has_cache;
+        $real_key = $this->keyName($key);
+        $re = apc_exists($real_key);
+        $this->logMsg('has', $key, $re);
+        return $re;
     }
 
     /**
@@ -339,11 +252,7 @@ class Apc extends Transaction implements CacheInterface
         $key_name = $this->keyName($key);
         $ttl = $this->ttl($ttl);
         $re = apc_add($key_name, $value, $ttl);
-        //如果写入成功，加入到缓存中
-        if ($re) {
-            $this->cache_arr[$key_name] = $value;
-        }
-        $this->getLogger()->debug($this->logMsg('ADD', $key, $value, $re ? 'success' : 'failed'));
+        $this->logMsg('add', $key, $re, $value);
         return $re;
     }
 
@@ -356,8 +265,8 @@ class Apc extends Transaction implements CacheInterface
     public function increase($key, $step = 1)
     {
         $key_name = $this->keyName($key);
-        $re = apc_inc($key_name, $step);
-        $this->getLogger()->debug($this->logMsg('INCREASE', $key, $re));
+        $re = apc_inc($key_name, $step, $is_ok);
+        $this->logMsg('increase', $key, $is_ok, $re);
         return $re;
     }
 
@@ -370,99 +279,42 @@ class Apc extends Transaction implements CacheInterface
     public function decrease($key, $step = 1)
     {
         $key_name = $this->keyName($key);
-        $re = apc_dec($key_name, $step);
-        $this->getLogger()->debug($this->logMsg('DECREASE', $key, $re));
+        $re = apc_dec($key_name, $step, $is_ok);
+        $this->logMsg('decrease', $key, $is_ok, $re);
         return $re;
-    }
-
-    /**
-     * 设置一个缓存的过期时间（精确时间）
-     * @param string $key 缓存
-     * @param int|null $time 时间
-     * @return bool
-     */
-    public function expiresAt($key, $time)
-    {
-        return $this->expiresAfter($key, (int)$time - time());
-    }
-
-    /**
-     * 设置一个缓存有效时间
-     * @param string $key 缓存
-     * @param int|null $time 时间
-     * @return bool
-     */
-    public function expiresAfter($key, $time)
-    {
-        //不存在key
-        if (!$this->has($key)) {
-            return false;
-        }
-        $ttl = $this->ttl($time);
-        $value = $this->get($key);
-        $this->set($key, $value, $ttl);
-        $this->getLogger()->debug($this->logMsg('SET_TTL', $key, $value, 'new ttl:' . $ttl));
-        return true;
-    }
-
-    /**
-     * 提交
-     * @return void
-     */
-    public function commit()
-    {
-        if (!$this->cache_save) {
-            return;
-        }
-        $logger = $this->getLogger();
-        $logger->debug($this->logMsg('COMMIT', ''));
-        foreach ($this->cache_save as $name => $tmp) {
-            $key = $this->keyName($name);
-            $re = apc_store($key, $tmp[0], $tmp[1]);
-            $msg = $re ? 'ok' : 'fail';
-            $logger->debug($this->logMsg('commit/set', $key, $tmp[0], $msg));
-        }
-        $this->cache_arr = null;
-    }
-
-    /**
-     * 回滚
-     * @return void
-     */
-    public function rollback()
-    {
-        $this->cache_save = null;
-    }
-
-    /**
-     * 清理内存
-     * @return void
-     */
-    public function cleanup()
-    {
-        $this->cache_arr = $this->cache_save = null;
     }
 
     /**
      * 日志消息
      * @param string $action 操作类型
      * @param string|array $key 键名
-     * @param mixed $val 值
-     * @param null|string $ext_msg 附加消息
-     * @return string
+     * @param bool $is_success 结果
+     * @param mixed $result
      */
-    private function logMsg($action, $key, $val = null, $ext_msg = null)
+    private function logMsg($action, $key, $is_success, $result = null)
     {
-        $str = '[Apc ' . $this->conf_name . ']' . $action;
+        $str = Debug::getIoStepStr() . '[Apc ' . $this->conf_name . '][' . $action . ']';
         if (!empty($key)) {
-            $str .= ' Key:' . $key;
+            $str .= $key;
         }
-        if (null !== $val) {
-            $str .= ' Value:' . FFanDebug::varFormat($val) . ' ';
+        $str .= $is_success ? ' success' : ' failed';
+        $this->logger->info($str);
+        if (null !== $result && $this->is_debug) {
+            $this->logger->info('[apc result]' . Debug::varFormat($result));
         }
-        if (null !== $ext_msg) {
-            $str .= FFanDebug::varFormat($ext_msg);
+        Debug::addIoStep();
+    }
+
+    /**
+     * 获取实例
+     * @param string $name
+     * @return self
+     */
+    public static function getInstance($name)
+    {
+        if (!isset(self::$instance_arr[$name])) {
+            self::$instance_arr[$name] = new Apc($name);
         }
-        return $str;
+        return self::$instance_arr[$name];
     }
 }

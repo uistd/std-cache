@@ -12,11 +12,6 @@ FFanConfig::addArray(
                 'port' => 11211
             )
         ),
-        'ffan-logger:web' => array(
-            'file' => 'test',
-            'path' => 'test'
-        ),
-        'runtime_path' => __DIR__ . DIRECTORY_SEPARATOR,
         'env' => 'dev'
     )
 );

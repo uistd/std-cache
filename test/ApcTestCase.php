@@ -5,7 +5,10 @@ require_once '../vendor/autoload.php';
 require_once 'config.php';
 
 /** @var Apc $apc */
-$apc = CacheFactory::get('apc');
+$apc = Apc::getInstance('apc');
+
+new \FFan\Std\Logger\FileLogger('logs');
+
 $apc->set('test', 'test apc string');
 
 $re = $apc->get('test');
@@ -34,7 +37,6 @@ $apc->set('test_3', 'test string 3');
 $apc->set('test_4', 'test string 4');
 $apc->set('test_5', 'test string 5');
 $apc->set('test_6', 'test string 6');
-$apc->commit();
 
 $result = $apc->getMultiple(array(
     'test',
@@ -46,8 +48,6 @@ $result = $apc->getMultiple(array(
 ));
 
 var_dump('get-multi', $result);
-
-$apc->cleanup();
 
 $result = $apc->getMultiple(array(
     'test',

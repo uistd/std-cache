@@ -108,20 +108,4 @@ interface CacheInterface
      * @return bool|int 如果值不存在，将返回false
      */
     public function decrease($key, $step = 1);
-
-    /**
-     * 设置一个缓存的过期时间（精确时间）
-     * @param string $key 缓存
-     * @param int|null $time 时间
-     * @return bool
-     */
-    public function expiresAt($key, $time);
-
-    /**
-     * 设置一个缓存有效时间
-     * @param string $key 缓存
-     * @param int|null $time 时间
-     * @return bool
-     */
-    public function expiresAfter($key, $time);
 }
