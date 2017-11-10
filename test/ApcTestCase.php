@@ -66,10 +66,24 @@ $apc->setMultiple(
         'test_8' => 'test string 8',
         'test_9' => 'test string 9',
         'test_10' => 'test string 10',
-        'test_11' => 'test string 11'
+        'test_11' => 'test string 14',
     ), 300
 );
+
+
+$result = $apc->getMultiple(array(
+    'test_7',
+    'test_8',
+    'test_9',
+    'test_10',
+    'test_11',
+    'no_key'
+));
+
+var_dump($result);
 
 $apc->set('test_12', 'test string 12', 500);
 $apc->set('test_13', 'test string 13', 500);
 $apc->set('test_14', 'test string 14', 600);
+
+$apc->clear();

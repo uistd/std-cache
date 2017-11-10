@@ -57,10 +57,9 @@ interface CacheInterface
     /**
      * 获取多个缓存.
      * @param array $keys 缓存键名列表
-     * @param mixed $default 当缓存不存在时的默认值
      * @return array 如果值不存在的key会以default填充
      */
-    public function getMultiple(array $keys, $default = null);
+    public function getMultiple(array $keys);
 
     /**
      * 批量设置缓存

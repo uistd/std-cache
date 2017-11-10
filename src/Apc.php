@@ -195,13 +195,24 @@ class Apc implements CacheInterface
     /**
      * 获取多个缓存.
      * @param array $keys 缓存键名列表
-     * @param mixed $default 当缓存不存在时的默认值
-     * @return array 如果值不存在的key会以default填充
+     * @return array
      */
-    public function getMultiple(array $keys, $default = null)
+    public function getMultiple(array $keys)
     {
-        //todo
-        return array();
+        $all_keys = array();
+        foreach ($keys as $key) {
+            $all_keys[$this->keyName($key)] = $key;
+        }
+        /** @var array $re */
+        $re = apc_fetch(array_keys($all_keys), $is_ok);
+        $result = array();
+        if ($is_ok) {
+            foreach ($re as $real_key => $value) {
+                $result[$all_keys[$real_key]] = $value;
+            }
+        }
+        $this->logMsg('get_multi', join(',', $keys), $is_ok, $result);
+        return $result;
     }
 
     /**
@@ -212,8 +223,15 @@ class Apc implements CacheInterface
      */
     public function setMultiple(array $values, $ttl = null)
     {
-        //todo
-        return true;
+        $new_values = array();
+        foreach ($values as $key => $value) {
+            $new_values[$this->keyName($key)] = $value;
+        }
+        $re = apc_store($new_values, null, $ttl);
+        //这里返回 出错的key的数组, 所以空数组 就是完全正确
+        $re = empty($re);
+        $this->logMsg('set_multi', join(',', array_keys($values)), $re, $values);
+        return $re;
     }
 
     /**
