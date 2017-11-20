@@ -49,8 +49,8 @@ class Apc implements CacheInterface
      */
     public function __construct($config_name)
     {
-        if (!extension_loaded('apc')) {
-            throw new \RuntimeException('Apc(u) extension needed!');
+        if (!function_exists('apcu_fetch')) {
+            throw new \RuntimeException('Apc extension needed!');
         }
         $this->logger = LogHelper::getLogRouter();
         $this->conf_name = $config_name;
@@ -93,7 +93,7 @@ class Apc implements CacheInterface
     public function get($key, $default = null)
     {
         $real_key = $this->keyName($key);
-        $re = apc_fetch($real_key, $is_ok);
+        $re = apcu_fetch($real_key, $is_ok);
         $this->logMsg('get', $key, $is_ok, $re);
         if (false === $is_ok) {
             return $default;
@@ -112,7 +112,7 @@ class Apc implements CacheInterface
     {
         $ttl = $this->ttl($ttl);
         $real_key = $this->keyName($key);
-        $re = apc_store($real_key, $value, $ttl);
+        $re = apcu_store($real_key, $value, $ttl);
         $this->logMsg('set', $key, $re, $value);
         //使用  set 方法更新后, 要把apc_value_arr[$key]清理, 之后就不能再用cas_set更新了
         unset($this->apc_value_arr[$key]);
@@ -133,7 +133,7 @@ class Apc implements CacheInterface
             $this->logMsg('cas_get_from_local_var', $key, true, $re);
         } else {
             $real_key = $this->keyName($key);
-            $re = apc_fetch($real_key, $is_ok);
+            $re = apcu_fetch($real_key, $is_ok);
             $this->logMsg('cas_get', $key, $is_ok, $re);
             if ($is_ok) {
                 $this->apc_value_arr[$key] = $re;
@@ -159,7 +159,7 @@ class Apc implements CacheInterface
         }
         $real_key = $this->keyName($key);
         $old_value = $this->apc_value_arr[$key];
-        $re = apc_cas($real_key, $old_value, $value);
+        $re = apcu_cas($real_key, $old_value, $value);
         if ($re) {
             $this->apc_value_arr[$key] = $value;
         }
@@ -176,7 +176,7 @@ class Apc implements CacheInterface
     {
         unset($this->apc_value_arr[$key]);
         $real_key = $this->keyName($key);
-        $re = apc_delete($real_key);
+        $re = apcu_delete($real_key);
         $this->logMsg('delete', $key, $re);
         return true;
     }
@@ -187,7 +187,7 @@ class Apc implements CacheInterface
      */
     public function clear()
     {
-        $re = apc_clear_cache('user');
+        $re = apcu_clear_cache();
         $this->logMsg('clear', 'all_keys', $re);
         return true;
     }
@@ -204,7 +204,7 @@ class Apc implements CacheInterface
             $all_keys[$this->keyName($key)] = $key;
         }
         /** @var array $re */
-        $re = apc_fetch(array_keys($all_keys), $is_ok);
+        $re = apcu_fetch(array_keys($all_keys), $is_ok);
         $result = array();
         if ($is_ok) {
             foreach ($re as $real_key => $value) {
@@ -227,7 +227,7 @@ class Apc implements CacheInterface
         foreach ($values as $key => $value) {
             $new_values[$this->keyName($key)] = $value;
         }
-        $re = apc_store($new_values, null, $ttl);
+        $re = apcu_store($new_values, null, $ttl);
         //这里返回 出错的key的数组, 所以空数组 就是完全正确
         $re = empty($re);
         $this->logMsg('set_multi', join(',', array_keys($values)), $re, $values);
@@ -241,7 +241,9 @@ class Apc implements CacheInterface
      */
     public function deleteMultiple(array $keys)
     {
-        //todo
+        foreach ($keys as $key) {
+            $this->delete($key);
+        }
         return true;
     }
 
@@ -253,7 +255,7 @@ class Apc implements CacheInterface
     public function has($key)
     {
         $real_key = $this->keyName($key);
-        $re = apc_exists($real_key);
+        $re = apcu_exists($real_key);
         $this->logMsg('has', $key, $re);
         return $re;
     }
@@ -269,7 +271,7 @@ class Apc implements CacheInterface
     {
         $key_name = $this->keyName($key);
         $ttl = $this->ttl($ttl);
-        $re = apc_add($key_name, $value, $ttl);
+        $re = apcu_add($key_name, $value, $ttl);
         $this->logMsg('add', $key, $re, $value);
         return $re;
     }
@@ -283,7 +285,7 @@ class Apc implements CacheInterface
     public function increase($key, $step = 1)
     {
         $key_name = $this->keyName($key);
-        $re = apc_inc($key_name, $step, $is_ok);
+        $re = apcu_inc($key_name, $step, $is_ok);
         $this->logMsg('increase', $key, $is_ok, $re);
         return $re;
     }
@@ -297,7 +299,7 @@ class Apc implements CacheInterface
     public function decrease($key, $step = 1)
     {
         $key_name = $this->keyName($key);
-        $re = apc_dec($key_name, $step, $is_ok);
+        $re = apcu_dec($key_name, $step, $is_ok);
         $this->logMsg('decrease', $key, $is_ok, $re);
         return $re;
     }
