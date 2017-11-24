@@ -49,18 +49,6 @@ class Memcached extends Transaction implements CacheInterface
     const MEMCACHED_KEY_TOO_BIG = 38;
 
     /**
-     * 已经获取的缓存
-     * @var array
-     */
-    private $cache_arr;
-
-    /**
-     * 待保存的缓存
-     * @var array
-     */
-    private $cache_save;
-
-    /**
      * 连接对象
      * @var \Memcached
      */
@@ -137,7 +125,7 @@ class Memcached extends Transaction implements CacheInterface
         $this->is_init = true;
         $conf_arr = $this->config_set;
         if (!isset($conf_arr['server'])) {
-            throw new InvalidConfigException(CacheFactory::configGroupName($this->conf_name, 'server'), 'key is not exist!');
+            throw new InvalidConfigException('Memcache config key is not exist!');
         }
         //如果设置了分类，所有的键名前都会加上分类前缀
         if (isset($conf_arr['category'])) {
@@ -270,12 +258,6 @@ class Memcached extends Transaction implements CacheInterface
      */
     public function get($key, $default = null)
     {
-        //在缓存里已经有值
-        if (isset($this->cas_token_arr[$key])) {
-            $ret = $this->cache_arr[$key];
-            $this->logger_handle->debug($this->logMsg('Get', $key, $ret, 'from $this->cache_arr'));
-            return $ret;
-        }
         //系统已经不可用了
         if ($this->is_disabled) {
             return $default;
@@ -299,8 +281,6 @@ class Memcached extends Transaction implements CacheInterface
         //如果ret是false 并且 result_code 不为0, 表示 false 不是缓存值，而是失败的返回值
         if (false === $ret && $result_code > 0) {
             $ret = $default;
-        } else {
-            $this->cache_arr[$key] = $ret;
         }
         return $ret;
     }
@@ -360,9 +340,8 @@ class Memcached extends Transaction implements CacheInterface
             return $this->casSet($key, $value, $ttl);
         }
         $ttl = $this->ttl($ttl);
-        $this->cache_arr[$key] = $value;
-        $this->cache_save[$key] = array($value, $ttl);
-        return true;
+        $cache_handle = $this->getCacheHandle();
+        return $cache_handle->set($key, $value, $ttl);
     }
 
     /**
@@ -372,7 +351,6 @@ class Memcached extends Transaction implements CacheInterface
      */
     public function delete($key)
     {
-        unset($this->cache_arr[$key], $this->cache_save[$key], $this->cas_token_arr[$key]);
         if ($this->is_disabled) {
             return true;
         }
@@ -400,7 +378,6 @@ class Memcached extends Transaction implements CacheInterface
             return true;
         }
         $cache_handle = $this->getCacheHandle();
-        $this->cleanup();
         $ret = $cache_handle->flush();
         $this->logger_handle->notice($this->logMsg('Flush'));
         if (false === $ret) {
@@ -422,25 +399,8 @@ class Memcached extends Transaction implements CacheInterface
     public function getMultiple(array $keys, $default = null)
     {
         $result = array();
-        //先检查在本地数组里有没有
-        if (!empty($this->cache_arr)) {
-            $from_cache_arr = null;
-            foreach ($keys as $i => $name) {
-                //在缓存列表
-                if (isset($this->cache_arr[$name])) {
-                    $result[$name] = $this->cache_arr[$name];
-                    $from_cache_arr[] = $name;
-                    unset($keys[$i]);
-                }
-            }
-            if ($from_cache_arr) {
-                $log_msg = $this->logMsg('getMultiple', '[FROM $this->cache_arr]', join(',', $from_cache_arr));
-                $this->logger_handle->debug($log_msg);
-            }
-        }
         //已经不需要和服务器交互了，最理想的情况
         if (empty($keys)) {
-            $this->logger_handle->debug($this->logMsg('getMultiple final', '[all from cache]', $result));
             return $result;
         }//服务器已经不可用了
         elseif ($this->is_disabled) {
@@ -470,12 +430,10 @@ class Memcached extends Transaction implements CacheInterface
                 $name = $this->unpackKey($name);
                 //表示不存在，设置成false，为了isset
                 if (null === $value) {
-                    $value = false;
                     $result[$name] = $default;
                 } else {
                     $result[$name] = $value;
                 }
-                $this->cache_arr[$name] = $value;
             }
         }
         $this->logger_handle->debug($this->logMsg('getMultiple final', $keys, $result));
@@ -490,13 +448,13 @@ class Memcached extends Transaction implements CacheInterface
      */
     public function setMultiple(array $values, $ttl = null)
     {
-        $ttl = $this->ttl($ttl);
-        foreach ($values as $name => $value) {
-            $this->cache_arr[$name] = $value;
-            $this->cache_save[$name] = array($value, $ttl);
+        if ($this->is_disabled) {
+            return false;
         }
-        $this->logger_handle->debug($this->logMsg('setMultiple', array_keys($values), $values, ' commit later.'));
-        return true;
+        $cache_handle = $this->getCacheHandle();
+        $ttl = $this->ttl($ttl);
+        $ret = $cache_handle->setMulti($values, $ttl);
+        return $ret;
     }
 
     /**
@@ -532,10 +490,6 @@ class Memcached extends Transaction implements CacheInterface
      */
     public function add($key, $value, $ttl = null)
     {
-        //已经有了这个key了
-        if (isset($this->cache_arr[$key])) {
-            return false;
-        }
         //如果服务器不可用了，直接返回false
         if ($this->is_disabled) {
             return false;
@@ -553,7 +507,6 @@ class Memcached extends Transaction implements CacheInterface
                 return $this->retry('add', func_get_args());
             }
         }
-        $this->cache_arr[$key] = $value;
         return $ret;
     }
 
@@ -619,11 +572,6 @@ class Memcached extends Transaction implements CacheInterface
         if ($this->is_disabled) {
             return false;
         }
-        //如果在待存列表中，缓存起来异步操作
-        if (isset($this->cache_save[$key])) {
-            $this->cache_save[$key][1] = $time;
-            $ret = true;
-        } else {
             $cache_handle = $this->getCacheHandle();
             $save_key = $this->makeKey($key);
             $ret = $cache_handle->touch($save_key, $time);
@@ -635,7 +583,6 @@ class Memcached extends Transaction implements CacheInterface
                     return $this->retry('expiresAt', func_get_args());
                 }
             }
-        }
         return $ret;
     }
 
@@ -696,24 +643,6 @@ class Memcached extends Transaction implements CacheInterface
             }
         }
         $this->cache_save = null;
-    }
-
-    /**
-     * 回滚
-     * @return void
-     */
-    public function rollback()
-    {
-        $this->cache_save = $this->cas_token_arr = null;
-    }
-
-    /**
-     * 清理内存
-     * @return void
-     */
-    public function cleanup()
-    {
-        $this->cache_arr = $this->cache_save = $this->cas_token_arr = null;
     }
 
     /**
@@ -785,12 +714,6 @@ class Memcached extends Transaction implements CacheInterface
      */
     public function casGet($key, $default = null)
     {
-        //在缓存里已经有值，如果需要token，必须事先有token值，因为通过getMultiple方法拿不到token
-        if (isset($this->cas_token_arr[$key])) {
-            $ret = $this->cache_arr[$key];
-            $this->logger_handle->debug($this->logMsg('casGet', $key, $ret, 'from $this->cache_arr'));
-            return $ret;
-        }
         //系统已经不可用了
         if ($this->is_disabled) {
             return $default;
@@ -798,12 +721,6 @@ class Memcached extends Transaction implements CacheInterface
         $cache_handle = $this->getCacheHandle();
         //save_key必须在getCacheHandle之后
         $save_key = $this->makeKey($key);
-        //如果这个key在待存列表，立即写入
-        if (isset($this->cache_save[$key])) {
-            $tmp = $this->cache_save[$key];
-            $cache_handle->set($key, $tmp[0], $tmp[1]);
-            unset($this->cache_save[$key]);
-        }
         $ret = $cache_handle->get($save_key, null, $token);
         $this->logger_handle->debug($this->logMsg('casGet', $key, $ret));
         $result_code = 0;
@@ -821,7 +738,6 @@ class Memcached extends Transaction implements CacheInterface
         if (false === $ret && $result_code > 0) {
             $ret = $default;
         } else {
-            $this->cache_arr[$key] = $ret;
             $this->cas_token_arr[$key] = $token;
         }
         return $ret;
@@ -860,8 +776,7 @@ class Memcached extends Transaction implements CacheInterface
                 return $this->retry('casSet', func_get_args());
             }
         } else {
-            unset($this->cas_token_arr[$key], $this->cache_save[$key]);
-            $this->cache_arr[$key] = $value;
+            unset($this->cas_token_arr[$key]);
         }
         return $ret;
     }
