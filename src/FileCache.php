@@ -1,7 +1,7 @@
 <?php
 namespace FFan\Std\Cache;
 
-use FFan\Std\Event\Transaction;
+use FFan\Std\Event\EventManager;
 use FFan\Std\Common\Utils as FFanUtils;
 use FFan\Std\Common\Env as FFanEnv;
 
@@ -9,7 +9,7 @@ use FFan\Std\Common\Env as FFanEnv;
  * Class FileCache 文件缓存
  * @package FFan\Std\Cache
  */
-class FileCache extends Transaction implements CacheInterface
+class FileCache extends CacheBase implements CacheInterface
 {
     /** 判断是否过期的key */
     const EXPIRE_KEY = '__expire__';
@@ -39,26 +39,14 @@ class FileCache extends Transaction implements CacheInterface
     private $file_path;
 
     /**
-     * @var int 默认的过期时间
-     */
-    private $default_ttl;
-
-    /**
      * FileCache constructor.
      * @param string $config_name 配置名称
      * @param array $config_set 配置参数列表
      */
-    public function __construct($config_name, array $config_set)
+    public function __construct($config_name, $config_set)
     {
-        parent::__construct();
-    }
-
-    /**
-     * 退出前确保所有缓存写入
-     */
-    public function __exit()
-    {
-        $this->commit();
+        parent::__construct($config_name, $config_set, 'file');
+        EventManager::instance()->attach(EventManager::SHUTDOWN_EVENT, [$this, 'commit']);
     }
 
     /**
@@ -116,7 +104,7 @@ class FileCache extends Transaction implements CacheInterface
      */
     private function init()
     {
-        $base_dir = isset($conf_arr['cache_dir']) ? trim($conf_arr['cache_dir']) : 'file_cache';
+        $base_dir = $this->getConfigString('cache_dir', 'file_cache');
         if (DIRECTORY_SEPARATOR !== $base_dir[0]) {
             $base_dir = FFanUtils::joinPath(FFanEnv::getRuntimePath(), $base_dir);
         }
@@ -132,12 +120,8 @@ class FileCache extends Transaction implements CacheInterface
      */
     private function ttl($ttl)
     {
-        if (null === $this->default_ttl) {
-            $def_ttl = isset($config_set['default_ttl']) ? (int)$config_set['default_ttl'] : 0;
-            $this->default_ttl = $def_ttl > 0 ? $def_ttl : 86400;
-        }
         if (null === $ttl || $ttl < 0) {
-            return $this->default_ttl;
+            return 86400;
         }
         return $ttl;
     }
@@ -362,34 +346,6 @@ class FileCache extends Transaction implements CacheInterface
     }
 
     /**
-     * 设置一个缓存的过期时间（精确时间）
-     * @param string $key 缓存
-     * @param int|null $time 时间
-     * @return bool
-     */
-    public function expiresAt($key, $time)
-    {
-        if (!$this->has($key)) {
-            return false;
-        }
-        return $this->set($key, $this->get($key), $time - time());
-    }
-
-    /**
-     * 设置一个缓存有效时间
-     * @param string $key 缓存
-     * @param int|null $time 时间
-     * @return bool
-     */
-    public function expiresAfter($key, $time)
-    {
-        if (!$this->has($key)) {
-            return false;
-        }
-        return $this->set($key, $this->get($key), $time);
-    }
-
-    /**
      * 写入缓存
      */
     public function commit()
@@ -402,14 +358,6 @@ class FileCache extends Transaction implements CacheInterface
             $file_handle = fopen($file, 'a+');
             $this->writeFile($file_handle, $tmp[0], $tmp[1]);
         }
-        $this->cache_save = null;
-    }
-
-    /**
-     * 回滚
-     */
-    public function rollback()
-    {
         $this->cache_save = null;
     }
 }

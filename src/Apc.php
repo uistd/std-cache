@@ -2,16 +2,11 @@
 
 namespace FFan\Std\Cache;
 
-use FFan\Std\Common\Env;
-use FFan\Std\Console\Debug;
-use FFan\Std\Logger\LogHelper;
-use FFan\Std\Logger\LogRouter;
-
 /**
  * Class Apc
  * @package FFan\Std\Cache
  */
-class Apc implements CacheInterface
+class Apc extends CacheBase implements CacheInterface
 {
     /**
      * @var string 配置名
@@ -19,42 +14,21 @@ class Apc implements CacheInterface
     private $conf_name;
 
     /**
-     * @var int 默认的过期时间
-     */
-    private $default_ttl;
-
-    /**
-     * @var LogRouter
-     */
-    private $logger;
-
-    /**
-     * @var bool 是否调试模式
-     */
-    private $is_debug = false;
-
-    /**
      * @var array 值列表 用于cas 校验
      */
     private $apc_value_arr;
 
     /**
-     * @var self[]
+     * Apc constructor.
+     * @param string $conf_name
+     * @param array $conf_arr
      */
-    private static $instance_arr;
-
-    /**
-     * Memcached constructor.
-     * @param $config_name
-     */
-    public function __construct($config_name)
+    public function __construct($conf_name, array $conf_arr)
     {
+        parent::__construct($conf_name, $conf_arr, 'apc');
         if (!function_exists('apcu_fetch')) {
             throw new \RuntimeException('Apc extension needed!');
         }
-        $this->logger = LogHelper::getLogRouter();
-        $this->conf_name = $config_name;
-        $this->is_debug = Env::isDev() || Env::isSit();
     }
 
     /**
@@ -74,12 +48,8 @@ class Apc implements CacheInterface
      */
     private function ttl($ttl)
     {
-        if (null === $this->default_ttl) {
-            $def_ttl = isset($config_set['default_ttl']) ? (int)$config_set['default_ttl'] : 0;
-            $this->default_ttl = $def_ttl > 0 ? $def_ttl : 1800;
-        }
         if (null === $ttl || $ttl < 0) {
-            return $this->default_ttl;
+            return 1800;
         }
         return $ttl;
     }
@@ -94,7 +64,7 @@ class Apc implements CacheInterface
     {
         $real_key = $this->keyName($key);
         $re = apcu_fetch($real_key, $is_ok);
-        $this->logMsg('get', $key, $is_ok, $re);
+        $this->logMsg('get', $key, $is_ok, null, $re);
         if (false === $is_ok) {
             return $default;
         }
@@ -113,7 +83,7 @@ class Apc implements CacheInterface
         $ttl = $this->ttl($ttl);
         $real_key = $this->keyName($key);
         $re = apcu_store($real_key, $value, $ttl);
-        $this->logMsg('set', $key, $re, $value);
+        $this->logMsg('set', $key, $re, null, $value);
         //使用  set 方法更新后, 要把apc_value_arr[$key]清理, 之后就不能再用cas_set更新了
         unset($this->apc_value_arr[$key]);
         return true;
@@ -130,11 +100,11 @@ class Apc implements CacheInterface
         //如果有本地缓存了,直接返回本地的
         if (isset($this->apc_value_arr[$key])) {
             $re = $this->apc_value_arr[$key];
-            $this->logMsg('cas_get_from_local_var', $key, true, $re);
+            $this->logMsg('cas_get_from_local_var', $key, true, null, $re);
         } else {
             $real_key = $this->keyName($key);
             $re = apcu_fetch($real_key, $is_ok);
-            $this->logMsg('cas_get', $key, $is_ok, $re);
+            $this->logMsg('cas_get', $key, $is_ok, null, $re);
             if ($is_ok) {
                 $this->apc_value_arr[$key] = $re;
             } else {
@@ -163,7 +133,7 @@ class Apc implements CacheInterface
         if ($re) {
             $this->apc_value_arr[$key] = $value;
         }
-        $this->logMsg('cas_set', $key, $re, $value);
+        $this->logMsg('cas_set', $key, $re, null, $value);
         return $re;
     }
 
@@ -211,7 +181,7 @@ class Apc implements CacheInterface
                 $result[$all_keys[$real_key]] = $value;
             }
         }
-        $this->logMsg('get_multi', join(',', $keys), $is_ok, $result);
+        $this->logMsg('get_multi', join(',', $keys), $is_ok, null, $result);
         return $result;
     }
 
@@ -230,7 +200,7 @@ class Apc implements CacheInterface
         $re = apcu_store($new_values, null, $ttl);
         //这里返回 出错的key的数组, 所以空数组 就是完全正确
         $re = empty($re);
-        $this->logMsg('set_multi', join(',', array_keys($values)), $re, $values);
+        $this->logMsg('set_multi', join(',', array_keys($values)), $re, null, $values);
         return $re;
     }
 
@@ -272,7 +242,7 @@ class Apc implements CacheInterface
         $key_name = $this->keyName($key);
         $ttl = $this->ttl($ttl);
         $re = apcu_add($key_name, $value, $ttl);
-        $this->logMsg('add', $key, $re, $value);
+        $this->logMsg('add', $key, $re, null, $value);
         return $re;
     }
 
@@ -286,7 +256,7 @@ class Apc implements CacheInterface
     {
         $key_name = $this->keyName($key);
         $re = apcu_inc($key_name, $step, $is_ok);
-        $this->logMsg('increase', $key, $is_ok, $re);
+        $this->logMsg('increase', $key, $is_ok, null, $re);
         return $re;
     }
 
@@ -300,41 +270,7 @@ class Apc implements CacheInterface
     {
         $key_name = $this->keyName($key);
         $re = apcu_dec($key_name, $step, $is_ok);
-        $this->logMsg('decrease', $key, $is_ok, $re);
+        $this->logMsg('decrease', $key, $is_ok, null, $re);
         return $re;
-    }
-
-    /**
-     * 日志消息
-     * @param string $action 操作类型
-     * @param string|array $key 键名
-     * @param bool $is_success 结果
-     * @param mixed $result
-     */
-    private function logMsg($action, $key, $is_success, $result = null)
-    {
-        $str = Debug::getIoStepStr() . '[Apc ' . $this->conf_name . '][' . $action . ']';
-        if (!empty($key)) {
-            $str .= $key;
-        }
-        $str .= $is_success ? ' success' : ' failed';
-        $this->logger->info($str);
-        if (null !== $result && $this->is_debug) {
-            $this->logger->info('[apc result]' . Debug::varFormat($result));
-        }
-        Debug::addIoStep();
-    }
-
-    /**
-     * 获取实例
-     * @param string $name
-     * @return self
-     */
-    public static function getInstance($name)
-    {
-        if (!isset(self::$instance_arr[$name])) {
-            self::$instance_arr[$name] = new Apc($name);
-        }
-        return self::$instance_arr[$name];
     }
 }
