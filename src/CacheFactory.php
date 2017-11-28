@@ -22,7 +22,9 @@ class CacheFactory extends Factory
     protected static $class_type = array(
         'apc' => 'FFan\Std\Cache\Apc',
         'memcached' => 'FFan\Std\Cache\Memcached',
-        'file' => 'FFan\Std\Cache\File'
+        'file' => 'FFan\Std\Cache\File',
+        'redis' => 'FFan\Std\Cache\Redis',
+        'clusterRedis' => 'FFan\Std\Cache\ClusterRedis',
     );
 
     /**
@@ -51,7 +53,7 @@ class CacheFactory extends Factory
     {
         $cache_type = isset($conf_arr['type']) ? $conf_arr['type'] : $config_name;
         if (!isset(self::$class_type[$cache_type])) {
-            throw new InvalidConfigException(self::configGroupName($config_name), 'unknown cache type');
+            throw new InvalidConfigException(self::configGroupName($config_name), 'unknown cache type:' . $cache_type);
         }
         return new self::$class_type[$cache_type]($config_name, $conf_arr);
     }

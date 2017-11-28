@@ -353,10 +353,9 @@ class Memcached extends CacheBase implements CacheInterface
     /**
      * 获取多个缓存.
      * @param array $keys 缓存键名列表
-     * @param mixed $default 当缓存不存在时的默认值
      * @return array 如果值不存在的key会以default填充
      */
-    public function getMultiple(array $keys, $default = null)
+    public function getMultiple(array $keys)
     {
         $result = array();
         //已经不需要和服务器交互了，最理想的情况
@@ -364,9 +363,6 @@ class Memcached extends CacheBase implements CacheInterface
             return $result;
         }//服务器已经不可用了
         elseif ($this->is_disabled) {
-            foreach ($keys as $name) {
-                $result[$name] = $default;
-            }
             return $result;
         } else {
             $cache_handle = $this->getCacheHandle();
@@ -388,10 +384,7 @@ class Memcached extends CacheBase implements CacheInterface
             foreach ($result_list as $name => $value) {
                 //这里要还原真实的key
                 $name = $this->unpackKey($name);
-                //表示不存在，设置成false，为了isset
-                if (null === $value) {
-                    $result[$name] = $default;
-                } else {
+                if (null !== $value) {
                     $result[$name] = $value;
                 }
             }
@@ -505,6 +498,11 @@ class Memcached extends CacheBase implements CacheInterface
         Debug::timerStart();
         $ret = $cache_handle->increment($save_key, $step);
         $result_code = $cache_handle->getResultCode();
+        //如果key不存在
+        if (\Memcached::RES_NOTFOUND === $result_code) {
+            $cache_handle->set($save_key, 0);
+            $ret = 0;
+        }
         $this->logMsg('Increment', $key, $result_code, Debug::timerStop(), $ret);
         if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
             return $this->retry('increment', func_get_args());
@@ -528,6 +526,11 @@ class Memcached extends CacheBase implements CacheInterface
         Debug::timerStart();
         $ret = $cache_handle->decrement($save_key, $step);
         $result_code = $cache_handle->getResultCode();
+        //如果key不存在
+        if (\Memcached::RES_NOTFOUND === $result_code) {
+            $cache_handle->set($save_key, 0);
+            $ret = 0;
+        }
         $this->logMsg('Decrement', $key, $result_code, Debug::timerStop(), $ret);
         if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
             return $this->retry('decrement', func_get_args());

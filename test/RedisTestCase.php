@@ -1,17 +1,18 @@
 <?php
+
 namespace FFan\Std\Cache;
 
 use FFan\Std\Logger\FileLogger;
 
 require_once '../vendor/autoload.php';
 require_once 'config.php';
-
-/** @var Memcached $cache */
-$cache = CacheFactory::get('main');
 new FileLogger('logs');
-$cache->clear();
+$cache = CacheFactory::get('redis');
 
-$cache->set('test', 'This is test memcached string');
+$re = $cache->get('test');
+var_dump($re);
+
+$cache->set('test', 9099);
 
 $re = $cache->get('test');
 
@@ -44,6 +45,7 @@ $result = $cache->getMultiple(array(
 
 var_dump($result);
 
+
 $cache->setMultiple(
     array(
         'test_7' => 'test string 7',
@@ -56,14 +58,15 @@ $cache->setMultiple(
 
 var_dump($cache->get('test_11'));
 
-$cache->deleteMultiple(array('test_11', 'test_10'));
+var_dump($cache->deleteMultiple(array('test_11', 'test_10')));
 
 var_dump($cache->get('test_10'));
 
-var_dump($cache->getMultiple(array('test_100', 'test_200')));
-var_dump($cache->increase('total2'));
-var_dump($cache->increase('total2'));
-var_dump($cache->increase('total2', 10));
-var_dump($cache->decrease('total2'));
-var_dump($cache->decrease('total2'));
-var_dump($cache->decrease('total2', 5));
+var_dump($cache->getMultiple(array('test_100', 'test_5', 'test_200')));
+$cache->set('total', 0);
+var_dump($cache->increase('total'));
+var_dump($cache->increase('total'));
+var_dump($cache->increase('total', 10));
+var_dump($cache->decrease('total'));
+var_dump($cache->decrease('total'));
+var_dump($cache->decrease('total', 5));

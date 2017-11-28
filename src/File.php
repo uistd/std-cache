@@ -1,4 +1,5 @@
 <?php
+
 namespace FFan\Std\Cache;
 
 use FFan\Std\Event\EventManager;

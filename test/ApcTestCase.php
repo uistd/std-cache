@@ -85,5 +85,10 @@ var_dump($result);
 $apc->set('test_12', 'test string 12', 500);
 $apc->set('test_13', 'test string 13', 500);
 $apc->set('test_14', 'test string 14', 600);
+var_dump($apc->increase('total'));
+var_dump($apc->increase('total'));
+var_dump($apc->increase('total', 10));
+var_dump($apc->decrease('total'));
+var_dump($apc->decrease('total'));
+var_dump($apc->decrease('total', 5));
 
-$apc->clear();
