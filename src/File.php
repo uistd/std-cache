@@ -6,10 +6,10 @@ use FFan\Std\Common\Utils as FFanUtils;
 use FFan\Std\Common\Env as FFanEnv;
 
 /**
- * Class FileCache 文件缓存
+ * Class File 文件缓存
  * @package FFan\Std\Cache
  */
-class FileCache extends CacheBase implements CacheInterface
+class File extends CacheBase implements CacheInterface
 {
     /** 判断是否过期的key */
     const EXPIRE_KEY = '__expire__';

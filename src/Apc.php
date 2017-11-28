@@ -11,7 +11,7 @@ class Apc extends CacheBase implements CacheInterface
     /**
      * @var string 配置名
      */
-    private $conf_name;
+    protected $conf_name;
 
     /**
      * @var array 值列表 用于cas 校验

@@ -114,6 +114,7 @@ class Memcached extends CacheBase implements CacheInterface
         $server_conf = $this->getConfig('server');
         $current_list = $cache_obj->getServerList();
         $need_add = true;
+        Debug::timerStart();
         //检查当前连接的服务器, 是不是配置的服务器
         if (!empty($current_list)) {
             //单台服务器
@@ -149,11 +150,10 @@ class Memcached extends CacheBase implements CacheInterface
             } else {
                 $ret = $cache_obj->addServers($server_conf);
             }
-            $this->logMsg('Add server', 'server', $ret, $server_conf);
+            $this->logMsg('Add server', 'server', $cache_obj->getResultCode(), Debug::timerStop(), $server_conf);
             //如果添加服务器失败，表示系统已经不可用
             if (false === $ret) {
                 $this->is_disabled = true;
-                $this->logResultMessage($cache_obj->getResultCode());
             }
         }
         $this->cache_handle = $cache_obj;
@@ -165,7 +165,8 @@ class Memcached extends CacheBase implements CacheInterface
     private function reconnect()
     {
         $this->logMsg('reconnect');
-        $this->cache_handle->resetServerList();
+        //目前发现这一步有bug
+        //$this->cache_handle->resetServerList();
         $this->connect();
     }
 
@@ -228,17 +229,12 @@ class Memcached extends CacheBase implements CacheInterface
         $save_key = $this->makeKey($key);
         Debug::timerStart();
         $ret = $cache_handle->get($save_key);
-        $this->logMsg('Get', $key, $ret, Debug::timerStop(), $ret);
+        $result_code = $cache_handle->getResultCode();
+        $this->logMsg('get', $key, $result_code, Debug::timerStop(), $ret);
         $result_code = 0;
-        if (false === $ret) {
-            $result_code = $cache_handle->getResultCode();
-            if ($result_code > 0) {
-                $this->logResultMessage($result_code);
-                //服务器不可用，重试
-                if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
-                    return $this->retry('get', func_get_args());
-                }
-            }
+        //服务器断开的错误码
+        if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
+            return $this->retry('get', func_get_args());
         }
         //如果ret是false 并且 result_code 不为0, 表示 false 不是缓存值，而是失败的返回值
         if (false === $ret && $result_code > 0) {
@@ -302,9 +298,14 @@ class Memcached extends CacheBase implements CacheInterface
         }
         $ttl = $this->ttl($ttl);
         $cache_handle = $this->getCacheHandle();
+        $save_key = $this->makeKey($key);
         Debug::timerStart();
-        $ret = $cache_handle->set($key, $value, $ttl);
-        $this->logMsg('set', $key, $ret, Debug::timerStop(), $value);
+        $ret = $cache_handle->set($save_key, $value, $ttl);
+        $result_code = $cache_handle->getResultCode();
+        $this->logMsg('set', $key, $result_code, Debug::timerStop(), $value);
+        if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
+            return $this->retry('set', func_get_args());
+        }
         return $ret;
     }
 
@@ -322,13 +323,10 @@ class Memcached extends CacheBase implements CacheInterface
         $save_key = $this->makeKey($key);
         Debug::timerStart();
         $ret = $cache_handle->delete($save_key);
-        $this->logMsg('Delete', $key, $ret, Debug::timerStop());
-        if (false === $ret) {
-            $result_code = $cache_handle->getResultCode();
-            $this->logResultMessage($result_code);
-            if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
-                return $this->retry('remove', array($key));
-            }
+        $result_code = $cache_handle->getResultCode();
+        $this->logMsg('Delete', $key, $result_code, Debug::timerStop());
+        if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
+            return $this->retry('remove', array($key));
         }
         return $ret;
     }
@@ -344,13 +342,10 @@ class Memcached extends CacheBase implements CacheInterface
         }
         $cache_handle = $this->getCacheHandle();
         $ret = $cache_handle->flush();
-        $this->logMsg('Flush');
-        if (false === $ret) {
-            $result_code = $cache_handle->getResultCode();
-            $this->logResultMessage($result_code);
-            if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
-                return $this->retry('clear', null);
-            }
+        $result_code = $cache_handle->getResultCode();
+        $this->logMsg('Flush', '', $result_code);
+        if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
+            return $this->retry('clear', null);
         }
         return $ret;
     }
@@ -381,14 +376,13 @@ class Memcached extends CacheBase implements CacheInterface
             }
             Debug::timerStart();
             $result_list = $cache_handle->getMulti($new_keys, $cas_arr, \Memcached::GET_PRESERVE_ORDER);
-            $this->logMsg('GetMultiple', join(',', $keys), Debug::timerStop(), $result_list);
-            if (false === $result_list) {
-                $result_code = $cache_handle->getResultCode();
-                $this->logResultMessage($result_code);
-                //服务器已经不可用
-                if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
-                    return $this->retry('getMultiple', func_get_args());
-                }
+            $result_code = $cache_handle->getResultCode();
+            $this->logMsg('GetMultiple', join(',', $keys), $result_code, Debug::timerStop(), $result_list);
+            //服务器已经不可用
+            if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
+                return $this->retry('getMultiple', func_get_args());
+            }
+            if (!is_array($result_list)) {
                 $result_list = array();
             }
             foreach ($result_list as $name => $value) {
@@ -424,7 +418,12 @@ class Memcached extends CacheBase implements CacheInterface
         }
         Debug::timerStart();
         $ret = $cache_handle->setMulti($new_values, $ttl);
-        $this->logMsg('setMultiple', array_keys($values), $ret, Debug::timerStop());
+        $result_code = $cache_handle->getResultCode();
+        $this->logMsg('setMultiple', join(',', array_keys($values)), $result_code, Debug::timerStop(), $values);
+        //服务器已经不可用
+        if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
+            return $this->retry('setMultiple', func_get_args());
+        }
         return $ret;
     }
 
@@ -445,13 +444,10 @@ class Memcached extends CacheBase implements CacheInterface
         }
         Debug::timerStart();
         $ret = $cache_handle->deleteMulti($new_keys);
-        $this->logMsg('deleteMultiple', join(',', $keys), $ret, Debug::timerStop());
-        if (false === $ret) {
-            $result_code = $cache_handle->getResultCode();
-            $this->logResultMessage($result_code);
-            if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
-                return $this->retry('deleteMultiple', array($keys));
-            }
+        $result_code = $cache_handle->getResultCode();
+        $this->logMsg('deleteMultiple', join(',', $keys), $result_code, Debug::timerStop());
+        if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
+            return $this->retry('deleteMultiple', array($keys));
         }
         return $ret;
     }
@@ -484,14 +480,11 @@ class Memcached extends CacheBase implements CacheInterface
         $save_key = $this->makeKey($key);
         Debug::timerStart();
         $ret = $cache_handle->add($save_key, $value, $ttl);
-        $this->logMsg('Add', $key, $ret, Debug::timerStop(), $value);
-        if (false === $ret) {
-            $result_code = $cache_handle->getResultCode();
-            $this->logResultMessage($result_code);
-            //如果是断开连接了, 自动重连
-            if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
-                return $this->retry('add', func_get_args());
-            }
+        $result_code = $cache_handle->getResultCode();
+        $this->logMsg('Add', $key, $result_code, Debug::timerStop(), $value);
+        //如果是断开连接了, 自动重连
+        if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
+            return $this->retry('add', func_get_args());
         }
         return $ret;
     }
@@ -511,13 +504,10 @@ class Memcached extends CacheBase implements CacheInterface
         $save_key = $this->makeKey($key);
         Debug::timerStart();
         $ret = $cache_handle->increment($save_key, $step);
-        $this->logMsg('Increment', $key, $ret, Debug::timerStop(), $ret);
-        if (false === $ret) {
-            $result_code = $cache_handle->getResultCode();
-            $this->logResultMessage($result_code);
-            if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
-                return $this->retry('increment', func_get_args());
-            }
+        $result_code = $cache_handle->getResultCode();
+        $this->logMsg('Increment', $key, $result_code, Debug::timerStop(), $ret);
+        if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
+            return $this->retry('increment', func_get_args());
         }
         return $ret;
     }
@@ -537,13 +527,10 @@ class Memcached extends CacheBase implements CacheInterface
         $save_key = $this->makeKey($key);
         Debug::timerStart();
         $ret = $cache_handle->decrement($save_key, $step);
-        $this->logMsg('Decrement', $key, $ret, Debug::timerStop(), $ret);
-        if (false === $ret) {
-            $result_code = $cache_handle->getResultCode();
-            $this->logResultMessage($result_code);
-            if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
-                return $this->retry('decrement', func_get_args());
-            }
+        $result_code = $cache_handle->getResultCode();
+        $this->logMsg('Decrement', $key, $result_code, Debug::timerStop(), $ret);
+        if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
+            return $this->retry('decrement', func_get_args());
         }
         return $ret;
     }
@@ -551,8 +538,9 @@ class Memcached extends CacheBase implements CacheInterface
     /**
      * 记录memcached返回消息
      * @param int $ret_code
+     * @return string
      */
-    public function logResultMessage($ret_code)
+    private function logResultMessage($ret_code)
     {
         static $code_arr = array(
             \Memcached::RES_NO_SERVERS => true,
@@ -572,12 +560,33 @@ class Memcached extends CacheBase implements CacheInterface
             self::MEMCACHED_E2BIG => true,
             self::MEMCACHED_KEY_TOO_BIG => true
         );
+        $msg = '[RET ' . $ret_code . ']';
         //不在需要记录的列表里
         if (!isset($code_arr[$ret_code])) {
-            return;
+            return $msg;
         }
-        $msg = ' resultCode:' . $ret_code . ' resultMessage:' . $this->cache_handle->getResultMessage();
-        $this->logMsg('Ret_code', $msg);
+        if ($this->is_retry_flag) {
+            $msg .= '[RETRY]';
+        }
+        $msg .= $this->cache_handle->getResultMessage();
+        return $msg;
+    }
+
+    /**
+     * @param string $action
+     * @param string $key
+     * @param int $ret_code
+     * @param null $cost_time
+     * @param null $data
+     */
+    protected function logMsg($action, $key = '', $ret_code = 0, $cost_time = null, $data = null)
+    {
+        $is_success = true;
+        if ($ret_code > 0) {
+            $is_success = false;
+            $key .= $this->logResultMessage($ret_code);
+        }
+        parent::logMsg($action, $key, $is_success, $cost_time, $data);
     }
 
     /**
@@ -597,17 +606,11 @@ class Memcached extends CacheBase implements CacheInterface
         $save_key = $this->makeKey($key);
         Debug::timerStart();
         $ret = $cache_handle->get($save_key, null, $token);
-        $this->logMsg('casGet', $key, $ret, Debug::timerStop(), $ret);
-        $result_code = 0;
-        if (false === $ret) {
-            $result_code = $cache_handle->getResultCode();
-            if ($result_code > 0) {
-                $this->logResultMessage($result_code);
-                //服务器不可用，重试
-                if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
-                    return $this->retry('casGet', func_get_args());
-                }
-            }
+        $result_code = $cache_handle->getResultCode();
+        $this->logMsg('casGet', $key, $result_code, Debug::timerStop(), $ret);
+        //服务器不可用，重试
+        if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
+            return $this->retry('casGet', func_get_args());
         }
         //如果ret是false 并且 result_code 不为0, 表示 false 不是缓存值，而是失败的返回值
         if (false === $ret && $result_code > 0) {
@@ -643,17 +646,13 @@ class Memcached extends CacheBase implements CacheInterface
         $ttl = $this->ttl($ttl);
         Debug::timerStart();
         $ret = $cache_handle->cas($token, $save_key, $value, $ttl);
-        $this->logMsg('CasSet', $key, $ret,Debug::timerStop(), $value);
-        if (false === $ret) {
-            $result_code = $cache_handle->getResultCode();
-            $this->logResultMessage($result_code);
-            //服务器不可用，重试
-            if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
-                return $this->retry('casSet', func_get_args());
-            }
-        } else {
-            unset($this->cas_token_arr[$key]);
+        $result_code = $cache_handle->getResultCode();
+        $this->logMsg('CasSet', $key, $result_code, Debug::timerStop(), $value);
+        //服务器不可用，重试
+        if (self::MEMCACHED_SERVER_MARKED_DEAD === $result_code) {
+            return $this->retry('casSet', func_get_args());
         }
+        unset($this->cas_token_arr[$key]);
         return $ret;
     }
 }

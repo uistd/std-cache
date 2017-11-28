@@ -4,7 +4,7 @@ namespace FFan\Std\Cache;
 require_once '../vendor/autoload.php';
 require_once 'config.php';
 
-/** @var FileCache $cache */
+/** @var File $cache */
 $cache = CacheFactory::get('file');
 
 print_r($cache->get('test', 'no value'));

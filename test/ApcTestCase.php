@@ -5,7 +5,7 @@ require_once '../vendor/autoload.php';
 require_once 'config.php';
 
 /** @var Apc $apc */
-$apc = Apc::getInstance('apc');
+$apc = CacheFactory::get('apc');
 
 new \FFan\Std\Logger\FileLogger('logs');
 

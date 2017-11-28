@@ -76,10 +76,10 @@ class CacheBase extends ConfigBase
         if (!empty($cost_time)) {
             $str .= '[' . $cost_time . ']';
         }
+        $this->logger->info($str);
         if ($this->is_debug && null !== $data) {
             $this->logger->debug(Debug::varFormat($data));
         }
-        $this->logger->info($str);
         Debug::addIoStep();
     }
 
