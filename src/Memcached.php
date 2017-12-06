@@ -53,12 +53,6 @@ class Memcached extends CacheBase implements CacheInterface
     private $cache_handle;
 
     /**
-     * 键名前缀
-     * @var string
-     */
-    private $key_category = '';
-
-    /**
      * @var bool 是否初始化好了
      */
     private $is_init = false;
@@ -101,7 +95,6 @@ class Memcached extends CacheBase implements CacheInterface
         if (null == $this->getConfig('server')) {
             throw new InvalidConfigException('Memcache config key is not exist!');
         }
-        $this->key_category = $this->conf_name;
         $this->connect();
     }
 
@@ -175,15 +168,12 @@ class Memcached extends CacheBase implements CacheInterface
      * @param string $key 键名
      * @return string
      */
-    private function makeKey($key)
+    protected function makeKey($key)
     {
         if (!$this->is_init) {
             $this->init();
         }
-        if (empty($this->key_category)) {
-            return $key;
-        }
-        return $this->key_category . '.' . $key;
+        return parent::makeKey($key);
     }
 
     /**
@@ -205,10 +195,10 @@ class Memcached extends CacheBase implements CacheInterface
      */
     private function unpackKey($name)
     {
-        if (empty($this->key_category)) {
+        if (empty($this->key_prefix)) {
             return $name;
         }
-        $prefix = $this->key_category . '.';
+        $prefix = $this->key_prefix . '.';
         return substr($name, strlen($prefix));
     }
 

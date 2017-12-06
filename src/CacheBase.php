@@ -40,6 +40,11 @@ class CacheBase extends ConfigBase
     private $is_debug;
 
     /**
+     * @var string
+     */
+    protected $key_prefix;
+
+    /**
      * CacheBase constructor.
      * @param string $conf_name 配置名称
      * @param array $conf_arr 配置项
@@ -51,6 +56,8 @@ class CacheBase extends ConfigBase
         $this->cache_type = strtoupper($cache_type);
         $this->conf_name = $conf_name;
         $this->logger = LogHelper::getLogRouter();
+        $this->key_prefix = isset($conf_arr['key_prefix']) ? $conf_arr['key_prefix'] : $conf_name;
+        $this->key_prefix .= ':';
         if (!Env::isProduct()) {
             $this->is_debug = true;
         } else {
@@ -91,5 +98,15 @@ class CacheBase extends ConfigBase
     {
         $str = '[' . $this->cache_type . ' ' . $this->conf_name . ']' . $msg;
         $this->logger->error($str);
+    }
+
+    /**
+     * 生成真实保存的key
+     * @param string $key
+     * @return string
+     */
+    protected function makeKey($key)
+    {
+        return $this->key_prefix . $key;
     }
 }

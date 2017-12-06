@@ -32,16 +32,6 @@ class Apc extends CacheBase implements CacheInterface
     }
 
     /**
-     * 生成缓存key
-     * @param string $key
-     * @return string
-     */
-    private function keyName($key)
-    {
-        return $this->conf_name . '_' . $key;
-    }
-
-    /**
      * 生成过期时间
      * @param int $ttl 过期时间
      * @return int
@@ -62,7 +52,7 @@ class Apc extends CacheBase implements CacheInterface
      */
     public function get($key, $default = null)
     {
-        $real_key = $this->keyName($key);
+        $real_key = $this->makeKey($key);
         $re = apcu_fetch($real_key, $is_ok);
         $this->logMsg('get', $key, $is_ok, null, $re);
         if (false === $is_ok) {
@@ -81,7 +71,7 @@ class Apc extends CacheBase implements CacheInterface
     public function set($key, $value, $ttl = null)
     {
         $ttl = $this->ttl($ttl);
-        $real_key = $this->keyName($key);
+        $real_key = $this->makeKey($key);
         $re = apcu_store($real_key, $value, $ttl);
         $this->logMsg('set', $key, $re, null, $value);
         //使用  set 方法更新后, 要把apc_value_arr[$key]清理, 之后就不能再用cas_set更新了
@@ -102,7 +92,7 @@ class Apc extends CacheBase implements CacheInterface
             $re = $this->apc_value_arr[$key];
             $this->logMsg('cas_get_from_local_var', $key, true, null, $re);
         } else {
-            $real_key = $this->keyName($key);
+            $real_key = $this->makeKey($key);
             $re = apcu_fetch($real_key, $is_ok);
             $this->logMsg('cas_get', $key, $is_ok, null, $re);
             if ($is_ok) {
@@ -127,7 +117,7 @@ class Apc extends CacheBase implements CacheInterface
         if (!isset($this->apc_value_arr[$key])) {
             return false;
         }
-        $real_key = $this->keyName($key);
+        $real_key = $this->makeKey($key);
         $old_value = $this->apc_value_arr[$key];
         $re = apcu_cas($real_key, $old_value, $value);
         if ($re) {
@@ -145,7 +135,7 @@ class Apc extends CacheBase implements CacheInterface
     public function delete($key)
     {
         unset($this->apc_value_arr[$key]);
-        $real_key = $this->keyName($key);
+        $real_key = $this->makeKey($key);
         $re = apcu_delete($real_key);
         $this->logMsg('delete', $key, $re);
         return true;
@@ -171,7 +161,7 @@ class Apc extends CacheBase implements CacheInterface
     {
         $all_keys = array();
         foreach ($keys as $key) {
-            $all_keys[$this->keyName($key)] = $key;
+            $all_keys[$this->makeKey($key)] = $key;
         }
         /** @var array $re */
         $re = apcu_fetch(array_keys($all_keys), $is_ok);
@@ -195,7 +185,7 @@ class Apc extends CacheBase implements CacheInterface
     {
         $new_values = array();
         foreach ($values as $key => $value) {
-            $new_values[$this->keyName($key)] = $value;
+            $new_values[$this->makeKey($key)] = $value;
         }
         $re = apcu_store($new_values, null, $ttl);
         //这里返回 出错的key的数组, 所以空数组 就是完全正确
@@ -224,7 +214,7 @@ class Apc extends CacheBase implements CacheInterface
      */
     public function has($key)
     {
-        $real_key = $this->keyName($key);
+        $real_key = $this->makeKey($key);
         $re = apcu_exists($real_key);
         $this->logMsg('has', $key, $re);
         return $re;
@@ -239,7 +229,7 @@ class Apc extends CacheBase implements CacheInterface
      */
     public function add($key, $value, $ttl = null)
     {
-        $key_name = $this->keyName($key);
+        $key_name = $this->makeKey($key);
         $ttl = $this->ttl($ttl);
         $re = apcu_add($key_name, $value, $ttl);
         $this->logMsg('add', $key, $re, null, $value);
@@ -254,7 +244,7 @@ class Apc extends CacheBase implements CacheInterface
      */
     public function increase($key, $step = 1)
     {
-        $key_name = $this->keyName($key);
+        $key_name = $this->makeKey($key);
         $re = apcu_inc($key_name, $step, $is_ok);
         $this->logMsg('increase', $key, $is_ok, null, $re);
         return $re;
@@ -268,7 +258,7 @@ class Apc extends CacheBase implements CacheInterface
      */
     public function decrease($key, $step = 1)
     {
-        $key_name = $this->keyName($key);
+        $key_name = $this->makeKey($key);
         $re = apcu_dec($key_name, $step, $is_ok);
         $this->logMsg('decrease', $key, $is_ok, null, $re);
         return $re;

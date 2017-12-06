@@ -43,11 +43,6 @@ class ClusterRedis extends CacheBase implements CacheInterface
     private $slot_size = 24;
 
     /**
-     * @var string 键名前缀
-     */
-    private $key_prefix;
-
-    /**
      * @var array 当前服务器组的结点列表
      */
     private $server_nodes = array();
@@ -61,7 +56,6 @@ class ClusterRedis extends CacheBase implements CacheInterface
     public function __construct($conf_name, array $conf_arr)
     {
         parent::__construct($conf_name, $conf_arr, 'cluster_redis');
-        $this->key_prefix = $conf_name . '_';
         $servers = $this->getConfig('server');
         if (!is_array($servers)) {
             $this->errorMsg('server config error');
@@ -518,20 +512,6 @@ class ClusterRedis extends CacheBase implements CacheInterface
             $hash = $this->makeHash($key);
             unset($this->server_nodes[$hash]);
         }
-    }
-
-    /**
-     * 生成存储真正的key
-     * @param string $key
-     * @return string
-     * @throws \RedisException
-     */
-    private function makeKey($key)
-    {
-        if (!is_string($key) || empty($key)) {
-            throw new \InvalidArgumentException('Invalid redis key');
-        }
-        return $this->key_prefix . $key;
     }
 
     /**
