@@ -1,23 +1,23 @@
 <?php
-use FFan\Std\Common\Config as FFanConfig;
+use UiStd\Common\Config as UisConfig;
 
-FFanConfig::addArray(
+UisConfig::addArray(
     array(
-        'ffan-cache:apc' => array(
+        'uis-cache:apc' => array(
             'type' => 'apc',
         ),
-        'ffan-cache:main' => array(
+        'uis-cache:main' => array(
             'type' => 'memcached',
             'server' => array(
                 'host' => '127.0.0.1',
                 'port' => 11211
             )
         ),
-        'ffan-cache:redis' => array(
+        'uis-cache:redis' => array(
             'host' => '127.0.0.1',
             'port' => 10401
         ),
-        'ffan-cache:cluster' => array(
+        'uis-cache:cluster' => array(
             'type' => 'clusterRedis',
             'server' => array(
                 '127.0.0.1:10401',

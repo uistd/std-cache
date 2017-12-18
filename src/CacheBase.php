@@ -1,16 +1,16 @@
 <?php
 
-namespace FFan\Std\Cache;
+namespace UiStd\Cache;
 
-use FFan\Std\Common\ConfigBase;
-use FFan\Std\Common\Env;
-use FFan\Std\Console\Debug;
-use FFan\Std\Logger\LogHelper;
-use FFan\Std\Logger\LogRouter;
+use UiStd\Common\ConfigBase;
+use UiStd\Common\Env;
+use UiStd\Console\Debug;
+use UiStd\Logger\LogHelper;
+use UiStd\Logger\LogRouter;
 
 /**
  * Class CacheBase
- * @package FFan\Std\Cache
+ * @package UiStd\Cache
  */
 class CacheBase extends ConfigBase
 {

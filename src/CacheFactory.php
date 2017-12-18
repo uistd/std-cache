@@ -1,30 +1,30 @@
 <?php
 
-namespace FFan\Std\Cache;
+namespace UiStd\Cache;
 
-use FFan\Std\Common\Factory;
-use FFan\Std\Common\InvalidConfigException;
+use UiStd\Common\Factory;
+use UiStd\Common\InvalidConfigException;
 
 /**
  * Class CacheFactory
- * @package FFan\Std\Cache
+ * @package UiStd\Cache
  */
 class CacheFactory extends Factory
 {
     /**
      * @var string 配置组名
      */
-    protected static $config_group = 'ffan-cache';
+    protected static $config_group = 'uis-cache';
 
     /**
      * @var array 别名
      */
     protected static $class_type = array(
-        'apc' => 'FFan\Std\Cache\Apc',
-        'memcached' => 'FFan\Std\Cache\Memcached',
-        'file' => 'FFan\Std\Cache\File',
-        'redis' => 'FFan\Std\Cache\Redis',
-        'clusterRedis' => 'FFan\Std\Cache\ClusterRedis',
+        'apc' => 'UiStd\Cache\Apc',
+        'memcached' => 'UiStd\Cache\Memcached',
+        'file' => 'UiStd\Cache\File',
+        'redis' => 'UiStd\Cache\Redis',
+        'clusterRedis' => 'UiStd\Cache\ClusterRedis',
     );
 
     /**

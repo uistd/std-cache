@@ -1,9 +1,9 @@
 {
-  "name": "ffan/std-cache",
-  "description": "FFan cache",
+  "name": "uistd/cache",
+  "description": "UI Service 框架缓存组件，定义了缓存操作接口，实现多种缓存方式。",
   "keywords": [
-    "ffan",
-    "std",
+    "ui service",
+    "uistd",
     "cache"
   ],
   "type": "composer",
@@ -16,14 +16,14 @@
   ],
   "require": {
     "php": ">=5.5.0",
-    "ffan/std-event": "2.*",
-    "ffan/std-common": "2.*",
-    "ffan/std-logger": "1.*",
-    "ffan/std-console": "1.*"
+    "uistd/event": "3.*",
+    "uistd/common": "3.*",
+    "uistd/logger": "2.*",
+    "uistd/console": "2.*"
   },
   "autoload": {
     "psr-4": {
-      "FFan\\Std\\Cache\\": "src"
+      "UiStd\\Cache\\": "src"
     }
   },
   "minimum-stability": "stable",

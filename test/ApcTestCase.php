@@ -1,5 +1,5 @@
 <?php
-namespace FFan\Std\Cache;
+namespace UiStd\Cache;
 
 require_once '../vendor/autoload.php';
 require_once 'config.php';
@@ -7,7 +7,7 @@ require_once 'config.php';
 /** @var Apc $apc */
 $apc = CacheFactory::get('apc');
 
-new \FFan\Std\Logger\FileLogger('logs');
+new \UiStd\Logger\FileLogger('logs');
 
 $apc->set('test', 'test apc string');
 

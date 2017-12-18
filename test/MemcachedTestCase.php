@@ -1,7 +1,7 @@
 <?php
-namespace FFan\Std\Cache;
+namespace UiStd\Cache;
 
-use FFan\Std\Logger\FileLogger;
+use UiStd\Logger\FileLogger;
 
 require_once '../vendor/autoload.php';
 require_once 'config.php';

@@ -1,10 +1,10 @@
 <?php
 
-namespace FFan\Std\Cache;
+namespace UiStd\Cache;
 
 /**
  * Class Apc
- * @package FFan\Std\Cache
+ * @package UiStd\Cache
  */
 class Apc extends CacheBase implements CacheInterface
 {

@@ -1,5 +1,5 @@
 <?php
-namespace FFan\Std\Cache;
+namespace UiStd\Cache;
 
 require_once '../vendor/autoload.php';
 require_once 'config.php';

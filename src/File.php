@@ -1,14 +1,14 @@
 <?php
 
-namespace FFan\Std\Cache;
+namespace UiStd\Cache;
 
-use FFan\Std\Event\EventManager;
-use FFan\Std\Common\Utils as FFanUtils;
-use FFan\Std\Common\Env as FFanEnv;
+use UiStd\Event\EventManager;
+use UiStd\Common\Utils as UisUtils;
+use UiStd\Common\Env as UisEnv;
 
 /**
  * Class File 文件缓存
- * @package FFan\Std\Cache
+ * @package UiStd\Cache
  */
 class File extends CacheBase implements CacheInterface
 {
@@ -107,11 +107,11 @@ class File extends CacheBase implements CacheInterface
     {
         $base_dir = $this->getConfigString('cache_dir', 'file_cache');
         if (DIRECTORY_SEPARATOR !== $base_dir[0]) {
-            $base_dir = FFanUtils::joinPath(FFanEnv::getRuntimePath(), $base_dir);
+            $base_dir = UisUtils::joinPath(UisEnv::getRuntimePath(), $base_dir);
         }
         $this->file_path = $base_dir;
         //是否有可写权限
-        FFanUtils::pathWriteCheck($base_dir);
+        UisUtils::pathWriteCheck($base_dir);
     }
 
     /**

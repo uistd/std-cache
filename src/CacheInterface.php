@@ -1,10 +1,10 @@
 <?php
 
-namespace FFan\Std\Cache;
+namespace UiStd\Cache;
 
 /**
  * Interface CatchInterface simpleCache改良接口
- * @package FFan\Std\Cache
+ * @package UiStd\Cache
  */
 interface CacheInterface
 {

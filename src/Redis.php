@@ -1,9 +1,9 @@
 <?php
 
-namespace FFan\Std\Cache;
+namespace UiStd\Cache;
 
-use FFan\Std\Common\InvalidConfigException;
-use FFan\Std\Console\Debug;
+use UiStd\Common\InvalidConfigException;
+use UiStd\Console\Debug;
 
 class Redis extends CacheBase implements CacheInterface
 {

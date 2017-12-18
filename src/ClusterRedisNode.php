@@ -1,13 +1,13 @@
 <?php
 
-namespace FFan\Std\Cache;
+namespace UiStd\Cache;
 
-use FFan\Std\Common\InvalidConfigException;
-use FFan\Std\Console\Debug;
+use UiStd\Common\InvalidConfigException;
+use UiStd\Console\Debug;
 
 /**
  * Class ClusterRedisNode
- * @package FFan\Std\Cache
+ * @package UiStd\Cache
  */
 class ClusterRedisNode extends CacheBase
 {
