@@ -184,6 +184,9 @@ class Redis extends CacheBase implements CacheInterface
         $result = array();
         Debug::timerStart();
         $tmp_result = $this->redis_fd->mget($keys);
+        if (!is_array($tmp_result)) {
+            return $result;
+        }
         //数据需要解包
         foreach ($tmp_result as $index => $value) {
             if (false !== $value) {

@@ -195,6 +195,9 @@ class ClusterRedis extends CacheBase implements CacheInterface
             $redis_fd = $each_group['fd'];
             $keys_arr = $each_group['arr'];
             $tmp_result = $redis_fd->mget($keys_arr);
+            if (!is_array($tmp_result)) {
+                continue;
+            }
             foreach ($tmp_result as $i => $tmp_value) {
                 $save_key = $keys_arr[$i];
                 $raw_key = $key_map[$save_key];
